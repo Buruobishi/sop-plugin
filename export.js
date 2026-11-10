@@ -6,12 +6,12 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-function fileStem(name, fallback) {
+function fileStem(name, fallback, limit) {
   const cleaned = String(name || '')
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
-  return (cleaned || fallback).slice(0, 40);
+  return (cleaned || fallback).slice(0, limit || 40);
 }
 
 function safeFileName(name) {

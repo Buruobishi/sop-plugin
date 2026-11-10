@@ -1779,7 +1779,7 @@ document.getElementById('video').addEventListener('click', async () => {
     const blob = await buildStepVideo(guide, (text) => {
       document.getElementById('status').textContent = text;
     },);
-    downloadBlob(safeFileName(guide.title) + '.webm', blob);
+    downloadBlob(fileStem(displayTitle(guide), '未命名流程', 80) + '.webm', blob);
     document.getElementById('status').textContent = '视频已按当前步骤生成。改完步骤可以再下载一次。';
   } catch (error) {
     document.getElementById('status').textContent = '视频没有生成。';
