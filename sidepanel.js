@@ -55,12 +55,6 @@ function render() {
     body.appendChild(text);
     body.appendChild(noteField);
     body.appendChild(note);
-    if (step.url) {
-      const url = document.createElement('p');
-      url.className = 'url';
-      url.textContent = step.url;
-      body.appendChild(url);
-    }
     const shot = document.createElement('div');
     shot.className = 'shot';
     if (step.image) {
@@ -86,9 +80,14 @@ function render() {
     actions.appendChild(action('删除', () => {
       ask({ type: 'DELETE_STEP', id: step.id });
     },),);
-    if (step.kind === 'type' && !step.sensitive) {
+    if (step.kind === 'type') {
       actions.appendChild(action('涂掉输入', () => {
-        ask({ type: 'REDACT_STEP', id: step.id });
+        ask({ type: 'REDACT_STEP', id: step.id }).then((response) => {
+          if (response && response.guide) {
+            guide = response.guide;
+            render();
+          }
+        },);
       },),);
     }
     body.appendChild(actions);
@@ -152,19 +151,21 @@ document.getElementById('markdown').addEventListener('click', () => {
 },);
 
 function wrapPdfText(ctx, text, maxWidth) {
-  const chars = Array.from(String(text || ''));
   const lines = [];
-  let line = '';
-  chars.forEach((ch) => {
-    const next = line + ch;
-    if (line && ctx.measureText(next).width > maxWidth) {
-      lines.push(line);
-      line = ch;
-    } else {
-      line = next;
-    }
+  String(text || '').split('\n').forEach((part) => {
+    const chars = Array.from(part);
+    let line = '';
+    chars.forEach((ch) => {
+      const next = line + ch;
+      if (line && ctx.measureText(next).width > maxWidth) {
+        lines.push(line);
+        line = ch;
+      } else {
+        line = next;
+      }
+    },);
+    if (line) lines.push(line);
   },);
-  if (line) lines.push(line);
   return lines.length ? lines : [''];
 }
 
@@ -206,15 +207,42 @@ const PDF_DEFAULT = {
   image: 100,
   titleColor: '#1c1915',
   titleSize: 22,
-  stepSize: 28,
   titleBold: true,
+  stepColor: '#1c1915',
+  stepSize: 28,
+  stepBold: true,
   noteColor: '#1c1915',
   noteSize: 18,
   noteBold: false,
   blockGap: 12,
   lineGap: 8,
-  showUrl: true,
+  stepsPerPage: 1,
+  showStepUrl: false,
   showLabels: true,
+  logo: '',
+  logoPosition: 'top-right',
+  logoSize: 16,
+  watermark: '',
+  watermarkPosition: 'center',
+  watermarkSize: 36,
+  watermarkOpacity: 18,
+};
+
+const MARK_POSITIONS = {
+  'top-left': [0, 0],
+  'top-center': [0.5, 0],
+  'top-right': [1, 0],
+  'middle-left': [0, 0.5],
+  center: [0.5, 0.5],
+  'middle-right': [1, 0.5],
+  'bottom-left': [0, 1],
+  'bottom-center': [0.5, 1],
+  'bottom-right': [1, 1],
+};
+
+const pdfMarkData = {
+  logo: '',
+  watermark: '',
 };
 
 function hexColor(value, fallback) {
@@ -240,10 +268,82 @@ function setRange(id, labelId, value, min, max, fallback, suffix) {
   return next;
 }
 
+function setStepsPerPage(value) {
+  const next = clampInt(value, 1, 20, PDF_DEFAULT.stepsPerPage);
+  document.getElementById('pdf-steps').value = String(next);
+  return next;
+}
+
 function setImagePercent(value) {
   const percent = imagePercent(value);
   document.getElementById('pdf-image').value = String(percent);
   document.getElementById('pdf-image-label').textContent = percent + '%';
+}
+
+function markPosition(value, fallback) {
+  if (value === '') return '';
+  return MARK_POSITIONS[value] ? value : fallback;
+}
+
+function imageDataUrl(value) {
+  return typeof value === 'string' && value.indexOf('data:image/') === 0 ? value : '';
+}
+
+function paintMarkState() {
+  document.getElementById('pdf-logo-state').textContent = pdfMarkData.logo ? '已上传' : '未上传';
+  const watermarkState = pdfMarkData.watermark ? '已上传' : '未上传';
+  document.getElementById('pdf-watermark-state').textContent = watermarkState;
+}
+
+function readMarkFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || file.size > 8 * 1024 * 1024) {
+      reject(new Error('图片太大'));
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const maxEdge = 480;
+      const longest = Math.max(img.width, img.height) || 1;
+      const scale = Math.min(1, maxEdge / longest);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('图片没有读出来'));
+    };
+    img.src = url;
+  });
+}
+
+function drawStoredMark(ctx, image, pageWidth, pageHeight, position, sizePercent, opacityPercent) {
+  const anchor = MARK_POSITIONS[position];
+  if (!image || !anchor) return;
+  const margin = Math.round(pageWidth * 0.04);
+  const maxWidth = pageWidth - margin * 2;
+  const maxHeight = pageHeight - margin * 2;
+  let boxWidth = Math.max(24, Math.round(pageWidth * (clampInt(sizePercent, 8, 80, 16) / 100)));
+  let boxHeight = Math.round(boxWidth * (image.height / image.width));
+  if (boxWidth > maxWidth) {
+    boxHeight = Math.round(boxHeight * (maxWidth / boxWidth));
+    boxWidth = maxWidth;
+  }
+  if (boxHeight > maxHeight) {
+    boxWidth = Math.max(1, Math.round(boxWidth * (maxHeight / boxHeight)));
+    boxHeight = maxHeight;
+  }
+  const x = margin + anchor[0] * (maxWidth - boxWidth);
+  const y = margin + anchor[1] * (maxHeight - boxHeight);
+  ctx.save();
+  ctx.globalAlpha = clampInt(opacityPercent, 8, 100, 100) / 100;
+  ctx.drawImage(image, x, y, boxWidth, boxHeight);
+  ctx.restore();
 }
 
 function readPdfStyle() {
@@ -259,20 +359,47 @@ function readPdfStyle() {
     image: imagePercent(document.getElementById('pdf-image').value),
     titleColor: hexColor(document.getElementById('pdf-title-color').value, PDF_DEFAULT.titleColor),
     titleSize: clampInt(document.getElementById('pdf-title-size').value, 14, 40, PDF_DEFAULT.titleSize),
-    stepSize: clampInt(document.getElementById('pdf-step-size').value, 14, 40, PDF_DEFAULT.stepSize),
     titleBold: document.getElementById('pdf-title-bold').checked,
+    stepColor: hexColor(document.getElementById('pdf-step-color').value, PDF_DEFAULT.stepColor),
+    stepSize: clampInt(document.getElementById('pdf-step-size').value, 14, 40, PDF_DEFAULT.stepSize),
+    stepBold: document.getElementById('pdf-step-bold').checked,
     noteColor: hexColor(document.getElementById('pdf-note-color').value, PDF_DEFAULT.noteColor),
     noteSize: clampInt(document.getElementById('pdf-note-size').value, 12, 32, PDF_DEFAULT.noteSize),
     noteBold: document.getElementById('pdf-note-bold').checked,
     blockGap: clampInt(document.getElementById('pdf-block-gap').value, 0, 48, PDF_DEFAULT.blockGap),
     lineGap: clampInt(document.getElementById('pdf-line-gap').value, 0, 32, PDF_DEFAULT.lineGap),
-    showUrl: document.getElementById('pdf-url').checked,
+    stepsPerPage: setStepsPerPage(document.getElementById('pdf-steps').value),
+    showStepUrl: document.getElementById('pdf-url').checked,
     showLabels: document.getElementById('pdf-labels').checked,
+    logo: pdfMarkData.logo,
+    logoPosition: markPosition(
+      document.getElementById('pdf-logo-position').value,
+      PDF_DEFAULT.logoPosition,
+    ),
+    logoSize: clampInt(document.getElementById('pdf-logo-size').value, 8, 40, PDF_DEFAULT.logoSize),
+    watermark: pdfMarkData.watermark,
+    watermarkPosition: markPosition(
+      document.getElementById('pdf-watermark-position').value,
+      PDF_DEFAULT.watermarkPosition,
+    ),
+    watermarkSize: clampInt(
+      document.getElementById('pdf-watermark-size').value,
+      16,
+      70,
+      PDF_DEFAULT.watermarkSize,
+    ),
+    watermarkOpacity: clampInt(
+      document.getElementById('pdf-watermark-opacity').value,
+      8,
+      70,
+      PDF_DEFAULT.watermarkOpacity,
+    ),
   };
 }
 
 function applyPdfStyle(style) {
-  const next = Object.assign({}, PDF_DEFAULT, style || {});
+  const saved = style || {};
+  const next = Object.assign({}, PDF_DEFAULT, saved);
   document.getElementById('pdf-paper').value = hexColor(next.paper, PDF_DEFAULT.paper);
   document.getElementById('pdf-ink').value = hexColor(next.ink, PDF_DEFAULT.ink);
   document.getElementById('pdf-muted').value = hexColor(next.muted, PDF_DEFAULT.muted);
@@ -284,19 +411,58 @@ function applyPdfStyle(style) {
   setImagePercent(next.image);
   document.getElementById('pdf-title-color').value = hexColor(next.titleColor, PDF_DEFAULT.titleColor);
   setRange('pdf-title-size', 'pdf-title-size-label', next.titleSize, 14, 40, PDF_DEFAULT.titleSize, '');
-  setRange('pdf-step-size', 'pdf-step-size-label', next.stepSize, 14, 40, PDF_DEFAULT.stepSize, '');
   document.getElementById('pdf-title-bold').checked = next.titleBold !== false;
+  const stepColor = hexColor(saved.stepColor, hexColor(saved.titleColor, PDF_DEFAULT.stepColor));
+  document.getElementById('pdf-step-color').value = stepColor;
+  const stepSize = saved.stepSize == null ? PDF_DEFAULT.stepSize : saved.stepSize;
+  setRange('pdf-step-size', 'pdf-step-size-label', stepSize, 14, 40, PDF_DEFAULT.stepSize, '');
+  const stepBold = saved.stepBold == null ? saved.titleBold !== false : saved.stepBold !== false;
+  document.getElementById('pdf-step-bold').checked = stepBold;
   document.getElementById('pdf-note-color').value = hexColor(next.noteColor, PDF_DEFAULT.noteColor);
   setRange('pdf-note-size', 'pdf-note-size-label', next.noteSize, 12, 32, PDF_DEFAULT.noteSize, '');
   document.getElementById('pdf-note-bold').checked = next.noteBold === true;
   setRange('pdf-block-gap', 'pdf-block-gap-label', next.blockGap, 0, 48, PDF_DEFAULT.blockGap, '');
   setRange('pdf-line-gap', 'pdf-line-gap-label', next.lineGap, 0, 32, PDF_DEFAULT.lineGap, '');
-  document.getElementById('pdf-url').checked = next.showUrl !== false;
+  setStepsPerPage(next.stepsPerPage);
+  document.getElementById('pdf-url').checked = next.showStepUrl === true;
   document.getElementById('pdf-labels').checked = next.showLabels !== false;
+  pdfMarkData.logo = imageDataUrl(next.logo);
+  pdfMarkData.watermark = imageDataUrl(next.watermark);
+  document.getElementById('pdf-logo-file').value = '';
+  document.getElementById('pdf-watermark-file').value = '';
+  document.getElementById('pdf-logo-position').value = markPosition(next.logoPosition, PDF_DEFAULT.logoPosition);
+  document.getElementById('pdf-watermark-position').value = markPosition(
+    next.watermarkPosition,
+    PDF_DEFAULT.watermarkPosition,
+  );
+  setRange('pdf-logo-size', 'pdf-logo-size-label', next.logoSize, 8, 40, PDF_DEFAULT.logoSize, '%');
+  setRange(
+    'pdf-watermark-size',
+    'pdf-watermark-size-label',
+    next.watermarkSize,
+    16,
+    70,
+    PDF_DEFAULT.watermarkSize,
+    '%',
+  );
+  setRange(
+    'pdf-watermark-opacity',
+    'pdf-watermark-opacity-label',
+    next.watermarkOpacity,
+    8,
+    70,
+    PDF_DEFAULT.watermarkOpacity,
+    '%',
+  );
+  paintMarkState();
 }
 
 function savePdfStyle() {
-  chrome.storage.local.set({ pdfStyle: readPdfStyle() });
+  chrome.storage.local.set({ pdfStyle: readPdfStyle() }, () => {
+    if (chrome.runtime.lastError) {
+      document.getElementById('status').textContent = '商标或水印没有记住。请换一张小一点的图片。';
+    }
+  },);
 }
 
 const PANEL_THEMES = {
@@ -315,9 +481,13 @@ const PANEL_DEFAULT = {
   spacing: 14,
   leading: 145,
   radius: 8,
+  transparency: 0,
   titleColor: '#1c1915',
   titleSize: 18,
   titleBold: true,
+  stepTitleColor: '#1c1915',
+  stepTitleSize: 18,
+  stepTitleBold: true,
   noteColor: '#1c1915',
   noteSize: 13,
   noteBold: false,
@@ -348,6 +518,13 @@ function paperLuminance(hex) {
   return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
 }
 
+function setTransparency(value) {
+  const next = clampInt(value, 0, 60, PANEL_DEFAULT.transparency);
+  document.getElementById('panel-opacity').value = String(next);
+  document.getElementById('panel-opacity-label').textContent = next + '%';
+  return next;
+}
+
 function setLeading(value) {
   const next = clampInt(value, 120, 200, PANEL_DEFAULT.leading);
   document.getElementById('panel-leading').value = String(next);
@@ -367,9 +544,21 @@ function readPanelStyle() {
     spacing: clampInt(document.getElementById('panel-space').value, 8, 28, PANEL_DEFAULT.spacing),
     leading: clampInt(document.getElementById('panel-leading').value, 120, 200, PANEL_DEFAULT.leading),
     radius: clampInt(document.getElementById('panel-radius').value, 0, 16, PANEL_DEFAULT.radius),
+    transparency: setTransparency(document.getElementById('panel-opacity').value),
     titleColor: hexColor(document.getElementById('panel-title-color').value, PANEL_DEFAULT.titleColor),
     titleSize: clampInt(document.getElementById('panel-title-size').value, 14, 36, PANEL_DEFAULT.titleSize),
     titleBold: document.getElementById('panel-title-bold').checked,
+    stepTitleColor: hexColor(
+      document.getElementById('panel-step-title-color').value,
+      PANEL_DEFAULT.stepTitleColor,
+    ),
+    stepTitleSize: clampInt(
+      document.getElementById('panel-step-title-size').value,
+      14,
+      36,
+      PANEL_DEFAULT.stepTitleSize,
+    ),
+    stepTitleBold: document.getElementById('panel-step-title-bold').checked,
     noteColor: hexColor(document.getElementById('panel-note-color').value, PANEL_DEFAULT.noteColor),
     noteSize: clampInt(document.getElementById('panel-note-size').value, 12, 28, PANEL_DEFAULT.noteSize),
     noteBold: document.getElementById('panel-note-bold').checked,
@@ -390,7 +579,11 @@ function paintPanel(style) {
   const dark = paperLuminance(paper) < 0.35;
   const classic = paper.toLowerCase() === '#f7f4ee' && ink.toLowerCase() === '#1c1915';
   root.style.colorScheme = dark ? 'dark' : 'light';
+  const transparency = clampInt(style.transparency, 0, 60, PANEL_DEFAULT.transparency);
+  const alpha = (100 - transparency) / 100;
+  document.getElementById('panel-shell').style.opacity = String(alpha);
   root.style.setProperty('--paper', paper);
+  root.style.setProperty('--paper-fill', paper);
   root.style.setProperty('--ink', ink);
   root.style.setProperty('--accent', accent);
   root.style.setProperty('--muted', classic ? '#6d655b' : mixHex(ink, paper, 0.42));
@@ -399,10 +592,19 @@ function paintPanel(style) {
   if (dark) surface = mixHex(paper, ink, 0.12);
   else if (classic) surface = '#ffffff';
   root.style.setProperty('--surface', surface);
+  root.style.setProperty('--surface-fill', surface);
   root.style.setProperty('--font-size', fontSize + 'px');
   root.style.setProperty('--title-color', hexColor(style.titleColor, PANEL_DEFAULT.titleColor));
   root.style.setProperty('--title-size', titleSize + 'px');
   root.style.setProperty('--title-weight', style.titleBold === false ? '400' : '600');
+  const stepTitleSize = clampInt(style.stepTitleSize, 14, 36, titleSize);
+  const stepTitleBold = style.stepTitleBold == null ? style.titleBold !== false : style.stepTitleBold !== false;
+  root.style.setProperty(
+    '--step-title-color',
+    hexColor(style.stepTitleColor, hexColor(style.titleColor, PANEL_DEFAULT.stepTitleColor)),
+  );
+  root.style.setProperty('--step-title-size', stepTitleSize + 'px');
+  root.style.setProperty('--step-title-weight', stepTitleBold ? '600' : '400');
   root.style.setProperty('--note-color', hexColor(style.noteColor, PANEL_DEFAULT.noteColor));
   root.style.setProperty('--note-size', noteSize + 'px');
   root.style.setProperty('--note-weight', style.noteBold ? '600' : '400');
@@ -415,7 +617,8 @@ function paintPanel(style) {
 }
 
 function applyPanelStyle(style) {
-  const next = Object.assign({}, PANEL_DEFAULT, style || {});
+  const saved = style || {};
+  const next = Object.assign({}, PANEL_DEFAULT, saved);
   const theme = PANEL_THEMES[next.theme] ? next.theme : 'paper';
   document.getElementById('panel-theme').value = theme;
   document.getElementById('panel-paper').value = hexColor(next.paper, PANEL_DEFAULT.paper);
@@ -425,9 +628,27 @@ function applyPanelStyle(style) {
   setRange('panel-space', 'panel-space-label', next.spacing, 8, 28, PANEL_DEFAULT.spacing, '');
   setLeading(next.leading);
   setRange('panel-radius', 'panel-radius-label', next.radius, 0, 16, PANEL_DEFAULT.radius, '');
+  setTransparency(next.transparency);
   document.getElementById('panel-title-color').value = hexColor(next.titleColor, PANEL_DEFAULT.titleColor);
   setRange('panel-title-size', 'panel-title-size-label', next.titleSize, 14, 36, PANEL_DEFAULT.titleSize, '');
   document.getElementById('panel-title-bold').checked = next.titleBold !== false;
+  const stepTitleColor = hexColor(
+    saved.stepTitleColor,
+    hexColor(saved.titleColor, PANEL_DEFAULT.stepTitleColor),
+  );
+  document.getElementById('panel-step-title-color').value = stepTitleColor;
+  const stepTitleSize = saved.stepTitleSize == null ? saved.titleSize : saved.stepTitleSize;
+  setRange(
+    'panel-step-title-size',
+    'panel-step-title-size-label',
+    stepTitleSize,
+    14,
+    36,
+    PANEL_DEFAULT.stepTitleSize,
+    '',
+  );
+  const stepTitleBold = saved.stepTitleBold == null ? saved.titleBold !== false : saved.stepTitleBold !== false;
+  document.getElementById('panel-step-title-bold').checked = stepTitleBold;
   document.getElementById('panel-note-color').value = hexColor(next.noteColor, PANEL_DEFAULT.noteColor);
   setRange('panel-note-size', 'panel-note-size-label', next.noteSize, 12, 28, PANEL_DEFAULT.noteSize, '');
   document.getElementById('panel-note-bold').checked = next.noteBold === true;
@@ -467,7 +688,7 @@ function canvasToJpeg(canvas) {
   },);
 }
 
-async function pushPaperPages(pages, source, sheet, paperColor) {
+async function pushPaperPages(pages, source, sheet, paperColor, stamp) {
   const count = Math.max(1, Math.ceil(source.height / sheet.height));
   for (let index = 0; index < count; index += 1) {
     const piece = document.createElement('canvas');
@@ -479,6 +700,7 @@ async function pushPaperPages(pages, source, sheet, paperColor) {
     const offset = index * sheet.height;
     const sliceHeight = Math.min(sheet.height, source.height - offset);
     ctx.drawImage(source, 0, offset, source.width, sliceHeight, 0, 0, source.width, sliceHeight);
+    if (stamp) stamp(ctx, piece.width, piece.height);
     pages.push({
       bytes: await canvasToJpeg(piece),
       width: piece.width,
@@ -510,85 +732,129 @@ async function renderPdfPages(guide, style) {
   const bodySize = px(style.noteSize);
   const urlSize = px(16);
   const titleWeight = style.titleBold === false ? '400 ' : '600 ';
+  const stepIsBold = style.stepBold == null ? style.titleBold !== false : style.stepBold !== false;
+  const stepWeight = stepIsBold ? '600 ' : '400 ';
+  const stepColor = hexColor(style.stepColor, hexColor(style.titleColor, PDF_DEFAULT.stepColor));
   const noteWeight = style.noteBold ? '600 ' : '400 ';
   const blockGap = Math.max(0, Math.round(clampInt(style.blockGap, 0, 48, 12) * scale));
   const lineGap = Math.max(0, Math.round(clampInt(style.lineGap, 0, 32, 8) * scale));
-  const steps = guide.steps && guide.steps.length ? guide.steps : [{ text: '没有步骤', url: '', image: null }];
-  const pages = [];
+  const showLabels = style.showLabels !== false;
+  const stepsPerPage = clampInt(style.stepsPerPage, 1, 20, 1);
+  const marks = {
+    logo: await loadPdfImage(style.logo),
+    watermark: await loadPdfImage(style.watermark),
+  };
+  function stampPage(ctx, pageWidth, pageHeight) {
+    drawStoredMark(
+      ctx,
+      marks.watermark,
+      pageWidth,
+      pageHeight,
+      style.watermarkPosition,
+      style.watermarkSize,
+      style.watermarkOpacity,
+    );
+    drawStoredMark(
+      ctx,
+      marks.logo,
+      pageWidth,
+      pageHeight,
+      style.logoPosition,
+      style.logoSize,
+      100,
+    );
+  }
+  const headGap = headSize + lineGap;
+  const bodyGap = bodySize + lineGap;
+  const labelGap = labelSize + lineGap;
+  const steps = guide.steps && guide.steps.length
+    ? guide.steps
+    : [{ text: '没有步骤', url: '', image: null }];
+  const measure = document.createElement('canvas').getContext('2d');
+  measure.font = noteWeight + bodySize + 'px ' + font;
+  const intro = guide.description ? wrapPdfText(measure, guide.description, contentWidth) : [];
+  const prepared = [];
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
     const image = await loadPdfImage(step.image);
-    const measure = document.createElement('canvas').getContext('2d');
-    measure.font = noteWeight + bodySize + 'px ' + font;
-    const intro = index === 0 && guide.description ? wrapPdfText(measure, guide.description, contentWidth) : [];
-    measure.font = titleWeight + headSize + 'px ' + font;
-    const numberWidth = measure.measureText(String(index + 1) + '  ').width;
+    measure.font = stepWeight + headSize + 'px ' + font;
+    const numberLabel = String(index + 1) + '  ';
+    const numberWidth = measure.measureText(numberLabel).width;
     const headingLines = wrapPdfText(measure, step.text || '', contentWidth - numberWidth);
     measure.font = noteWeight + bodySize + 'px ' + font;
     const notes = step.note ? wrapPdfText(measure, step.note, contentWidth) : [];
     measure.font = urlSize + 'px ' + font;
-    const links = style.showUrl && step.url ? wrapPdfText(measure, step.url, contentWidth) : [];
-    const imageWidth = image ? Math.max(80, Math.round(contentWidth * (imagePercent(style.image) / 100))) : 0;
-    const imageHeight = image ? Math.round(imageWidth * (image.height / image.width)) : 0;
-    const headGap = headSize + lineGap;
-    const bodyGap = bodySize + lineGap;
-    const labelGap = labelSize + lineGap;
-    const firstPage = index === 0;
-    let height = pad;
-    if (firstPage) {
-      height += (style.showLabels ? labelGap : 0) + docSize + blockGap;
-      if (intro.length) height += (style.showLabels ? labelGap : 0) + intro.length * bodyGap + blockGap;
+    const links = style.showStepUrl && step.url ? wrapPdfText(measure, step.url, contentWidth) : [];
+    const fullWidth = image
+      ? Math.max(80, Math.round(contentWidth * (imagePercent(style.image) / 100)))
+      : 0;
+    const fullHeight = image ? Math.round(fullWidth * (image.height / image.width)) : 0;
+    prepared.push({
+      index,
+      step,
+      image,
+      numberWidth,
+      headingLines,
+      notes,
+      links,
+      fullWidth,
+      fullHeight,
+    });
+  }
+
+  function textHeight(item) {
+    let height = Math.max(1, item.headingLines.length) * headGap;
+    if (item.notes.length) {
+      height += (showLabels ? labelGap : 0) + item.notes.length * bodyGap;
     }
-    height += Math.max(1, headingLines.length) * headGap;
-    if (notes.length) height += (style.showLabels ? labelGap : 0) + notes.length * bodyGap;
-    if (links.length) height += blockGap + links.length * (urlSize + lineGap);
-    height += blockGap + (image ? imageHeight : 36) + pad;
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = style.paper;
-    ctx.fillRect(0, 0, width, height);
-    let y = pad;
-    if (firstPage) {
-      if (style.showLabels) {
-        ctx.fillStyle = style.muted;
-        ctx.font = labelSize + 'px ' + font;
-        ctx.fillText('标题', pad, y);
-        y += labelGap;
-      }
-      ctx.fillStyle = style.titleColor;
-      ctx.font = titleWeight + docSize + 'px ' + font;
-      ctx.fillText(guide.title || '未命名流程', pad, y);
-      y += docSize + blockGap;
-      if (intro.length) {
-        if (style.showLabels) {
-          ctx.fillStyle = style.muted;
-          ctx.font = labelSize + 'px ' + font;
-          ctx.fillText('说明', pad, y);
-          y += labelGap;
-        }
-        ctx.fillStyle = style.noteColor;
-        ctx.font = noteWeight + bodySize + 'px ' + font;
-        intro.forEach((line) => {
-          ctx.fillText(line, pad, y);
-          y += bodyGap;
-        },);
-        y += blockGap;
-      }
+    if (item.links.length) height += blockGap + item.links.length * (urlSize + lineGap);
+    return height + blockGap;
+  }
+
+  function docHeight() {
+    let height = docSize + blockGap;
+    if (intro.length) {
+      height += (showLabels ? labelGap : 0) + intro.length * bodyGap + blockGap;
     }
-    ctx.fillStyle = style.accent;
-    ctx.font = titleWeight + headSize + 'px ' + font;
-    ctx.fillText(String(index + 1), pad, y);
+    return height;
+  }
+
+  function drawDoc(ctx, y) {
+    ctx.textBaseline = 'top';
     ctx.fillStyle = style.titleColor;
-    ctx.font = titleWeight + headSize + 'px ' + font;
-    const headingText = headingLines.length ? headingLines : [''];
+    ctx.font = titleWeight + docSize + 'px ' + font;
+    ctx.fillText(guide.title || '未命名流程', pad, y);
+    y += docSize + blockGap;
+    if (!intro.length) return y;
+    if (showLabels) {
+      ctx.fillStyle = style.muted;
+      ctx.font = labelSize + 'px ' + font;
+      ctx.fillText('说明', pad, y);
+      y += labelGap;
+    }
+    ctx.fillStyle = style.noteColor;
+    ctx.font = noteWeight + bodySize + 'px ' + font;
+    intro.forEach((line) => {
+      ctx.fillText(line, pad, y);
+      y += bodyGap;
+    },);
+    return y + blockGap;
+  }
+
+  function drawStep(ctx, item, imageWidth, imageHeight, y) {
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = style.accent;
+    ctx.font = stepWeight + headSize + 'px ' + font;
+    ctx.fillText(String(item.index + 1), pad, y);
+    ctx.fillStyle = stepColor;
+    ctx.font = stepWeight + headSize + 'px ' + font;
+    const headingText = item.headingLines.length ? item.headingLines : [''];
     headingText.forEach((line, lineIndex) => {
-      ctx.fillText(line, pad + (lineIndex === 0 ? numberWidth : 0), y);
+      ctx.fillText(line, pad + (lineIndex === 0 ? item.numberWidth : 0), y);
       y += headGap;
     },);
-    if (notes.length) {
-      if (style.showLabels) {
+    if (item.notes.length) {
+      if (showLabels) {
         ctx.fillStyle = style.muted;
         ctx.font = labelSize + 'px ' + font;
         ctx.fillText('说明', pad, y);
@@ -596,30 +862,154 @@ async function renderPdfPages(guide, style) {
       }
       ctx.fillStyle = style.noteColor;
       ctx.font = noteWeight + bodySize + 'px ' + font;
-      notes.forEach((line) => {
+      item.notes.forEach((line) => {
         ctx.fillText(line, pad, y);
         y += bodyGap;
       },);
     }
-    if (links.length) {
+    if (item.links.length) {
       y += blockGap;
       ctx.fillStyle = style.muted;
       ctx.font = urlSize + 'px ' + font;
-      links.forEach((line) => {
+      item.links.forEach((line) => {
         ctx.fillText(line, pad, y);
         y += urlSize + lineGap;
       },);
     }
     y += blockGap;
-    if (image) {
+    if (item.image && imageHeight > 0) {
       const imageX = pad + Math.round((contentWidth - imageWidth) / 2);
-      ctx.drawImage(image, imageX, y, imageWidth, imageHeight);
-    } else {
+      ctx.drawImage(item.image, imageX, y, imageWidth, imageHeight);
+      return y + imageHeight;
+    }
+    if (!item.image) {
       ctx.fillStyle = style.accent;
       ctx.font = urlSize + 'px ' + font;
-      ctx.fillText(step.shotError || '这一步没有截到画面。', pad, y + 8);
+      ctx.fillText(item.step.shotError || '这一步没有截到画面。', pad, y);
+      return y + 36;
     }
-    await pushPaperPages(pages, canvas, sheet, style.paper);
+    return y;
+  }
+
+  function fitBox(item, maxHeight) {
+    if (!item.image || maxHeight <= 0) return { w: 0, h: 0 };
+    let boxWidth = item.fullWidth;
+    let boxHeight = item.fullHeight;
+    if (boxHeight > maxHeight) {
+      boxWidth = Math.max(1, Math.round(boxWidth * (maxHeight / boxHeight)));
+      boxHeight = maxHeight;
+    }
+    return { w: boxWidth, h: boxHeight };
+  }
+
+  function fittedBoxes(chunk, includeDoc) {
+    const inner = sheet.height - pad * 2;
+    let used = includeDoc ? docHeight() : 0;
+    chunk.forEach((item, index) => {
+      if (index) used += blockGap;
+      used += textHeight(item);
+      if (!item.image) used += 36;
+    },);
+    const room = inner - used;
+    if (room < 0) return null;
+    const imageCount = chunk.filter((item) => item.image).length;
+    const share = imageCount ? Math.floor(room / imageCount) : 0;
+    return chunk.map((item) => fitBox(item, share));
+  }
+
+  const pages = [];
+  async function emit(chunk, includeDoc, boxes, fitPage) {
+    let contentHeight = pad;
+    if (includeDoc) contentHeight += docHeight();
+    chunk.forEach((item, index) => {
+      if (index) contentHeight += blockGap;
+      contentHeight += textHeight(item);
+      contentHeight += item.image ? boxes[index].h : 36;
+    },);
+    contentHeight += pad;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = fitPage ? sheet.height : Math.max(contentHeight, sheet.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = style.paper;
+    ctx.fillRect(0, 0, width, canvas.height);
+    let y = pad;
+    if (includeDoc) y = drawDoc(ctx, y);
+    chunk.forEach((item, index) => {
+      if (index) y += blockGap;
+      y = drawStep(ctx, item, boxes[index].w, boxes[index].h, y);
+    },);
+    if (fitPage) {
+      stampPage(ctx, canvas.width, canvas.height);
+      pages.push({
+        bytes: await canvasToJpeg(canvas),
+        width: canvas.width,
+        height: canvas.height,
+        pageWidth: Math.round(sheet.pageWidth),
+        pageHeight: Math.round(sheet.pageHeight),
+      },);
+      return;
+    }
+    await pushPaperPages(pages, canvas, sheet, style.paper, stampPage);
+  }
+
+  async function emitScaled(chunk, includeDoc) {
+    const boxes = chunk.map((item) => fitBox(item, 160));
+    const source = document.createElement('canvas');
+    let contentHeight = pad;
+    if (includeDoc) contentHeight += docHeight();
+    chunk.forEach((item, index) => {
+      if (index) contentHeight += blockGap;
+      contentHeight += textHeight(item);
+      contentHeight += item.image ? boxes[index].h : 36;
+    },);
+    contentHeight += pad;
+    source.width = width;
+    source.height = Math.max(1, contentHeight);
+    const ctx = source.getContext('2d');
+    ctx.fillStyle = style.paper;
+    ctx.fillRect(0, 0, source.width, source.height);
+    let y = pad;
+    if (includeDoc) y = drawDoc(ctx, y);
+    chunk.forEach((item, index) => {
+      if (index) y += blockGap;
+      y = drawStep(ctx, item, boxes[index].w, boxes[index].h, y);
+    },);
+    const page = document.createElement('canvas');
+    page.width = width;
+    page.height = sheet.height;
+    const pageCtx = page.getContext('2d');
+    pageCtx.fillStyle = style.paper;
+    pageCtx.fillRect(0, 0, page.width, page.height);
+    const scale = Math.min(1, sheet.height / source.height);
+    const drawW = Math.max(1, Math.round(source.width * scale));
+    const drawH = Math.max(1, Math.round(source.height * scale));
+    const x = Math.round((width - drawW) / 2);
+    pageCtx.drawImage(source, x, 0, drawW, drawH);
+    stampPage(pageCtx, page.width, page.height);
+    pages.push({
+      bytes: await canvasToJpeg(page),
+      width: page.width,
+      height: page.height,
+      pageWidth: Math.round(sheet.pageWidth),
+      pageHeight: Math.round(sheet.pageHeight),
+    },);
+  }
+
+  for (let start = 0; start < prepared.length; start += stepsPerPage) {
+    const chunk = prepared.slice(start, start + stepsPerPage);
+    const includeDoc = start === 0;
+    if (stepsPerPage === 1) {
+      const full = chunk.map((item) => ({ w: item.fullWidth, h: item.fullHeight }));
+      await emit(chunk, includeDoc, full, false);
+    } else {
+      const boxes = fittedBoxes(chunk, includeDoc);
+      if (boxes) {
+        await emit(chunk, includeDoc, boxes, true);
+      } else {
+        await emitScaled(chunk, includeDoc);
+      }
+    }
   }
   return pages;
 }
@@ -647,8 +1037,249 @@ document.getElementById('html').addEventListener('click', () => {
   downloadText(name, toHtml(guide), 'text/html');
 },);
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  },);
+}
+
+function videoMime() {
+  const candidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  let mime = '';
+  candidates.forEach((item) => {
+    if (!mime && MediaRecorder.isTypeSupported(item)) mime = item;
+  },);
+  return mime;
+}
+
+function videoPx(width, value) {
+  return Math.max(1, Math.round((value * width) / 1280));
+}
+
+function paintVideoSlide(ctx, slide) {
+  const width = ctx.canvas.width;
+  const height = ctx.canvas.height;
+  const pad = videoPx(width, 56);
+  const font = 'PingFang SC, Noto Sans SC, sans-serif';
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#f7f4ee';
+  ctx.fillRect(0, 0, width, height);
+  ctx.textBaseline = 'top';
+  let y = pad;
+  ctx.font = '600 ' + videoPx(width, 52) + 'px ' + font;
+  ctx.fillStyle = '#1c1915';
+  wrapPdfText(ctx, slide.headline, width - pad * 2).slice(0, 2).forEach((line) => {
+    ctx.fillText(line, pad, y);
+    y += videoPx(width, 64);
+  },);
+  y += videoPx(width, 8);
+  if (slide.label) {
+    ctx.font = '600 ' + videoPx(width, 32) + 'px ' + font;
+    ctx.fillStyle = '#c2410c';
+    ctx.fillText(slide.label, pad, y);
+    const numberWidth = ctx.measureText(slide.label + '  ').width;
+    ctx.fillStyle = '#1c1915';
+    const titleWidth = width - pad * 2 - numberWidth;
+    const titleLines = wrapPdfText(ctx, slide.title, titleWidth);
+    const shown = titleLines.length ? titleLines : [''];
+    shown.forEach((line, lineIndex) => {
+      const x = lineIndex === 0 ? pad + numberWidth : pad;
+      ctx.fillText(line, x, y);
+      y += videoPx(width, 42);
+    },);
+    y += videoPx(width, 8);
+  }
+  if (slide.body) {
+    ctx.font = videoPx(width, 28) + 'px ' + font;
+    ctx.fillStyle = '#1c1915';
+    const maxLines = slide.image ? 3 : 8;
+    wrapPdfText(ctx, slide.body, width - pad * 2).slice(0, maxLines).forEach((line) => {
+      ctx.fillText(line, pad, y);
+      y += videoPx(width, 38);
+    },);
+  }
+  y += videoPx(width, 20);
+  const room = height - pad - y;
+  if (slide.image && room > videoPx(width, 40)) {
+    const maxWidth = width - pad * 2;
+    const scale = Math.min(maxWidth / slide.image.width, room / slide.image.height, 1);
+    const drawWidth = Math.max(1, Math.round(slide.image.width * scale));
+    const drawHeight = Math.max(1, Math.round(slide.image.height * scale));
+    const x = pad + Math.round((maxWidth - drawWidth) / 2);
+    ctx.drawImage(slide.image, x, y, drawWidth, drawHeight);
+    return;
+  }
+  if (slide.label && !slide.image) {
+    ctx.fillStyle = '#c2410c';
+    ctx.font = videoPx(width, 24) + 'px ' + font;
+    ctx.fillText('这一步没有截到画面。', pad, y);
+  }
+}
+
+async function buildStepVideo(guide, onProgress) {
+  const steps = guide.steps || [];
+  const headline = guide.title || '未命名流程';
+  const slides = [{
+    headline,
+    label: '',
+    title: '',
+    body: guide.description || '',
+    image: null,
+    ms: 2800,
+  },];
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    const image = await loadPdfImage(step.image);
+    const extra = Math.min(2200, Math.round(String(step.note || '').length * 35));
+    slides.push({
+      headline,
+      label: String(index + 1),
+      title: step.text || '',
+      body: step.note || '',
+      image,
+      ms: 2600 + extra,
+    },);
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = 1920;
+  canvas.height = 1080;
+  canvas.hidden = true;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  try {
+    if (typeof canvas.captureStream !== 'function' || typeof MediaRecorder === 'undefined') {
+      throw new Error('无法生成视频');
+    }
+    const stream = canvas.captureStream(30);
+    const mime = videoMime();
+    const options = { videoBitsPerSecond: 20000000 };
+    if (mime) options.mimeType = mime;
+    const recorder = new MediaRecorder(stream, options);
+    const chunks = [];
+    const done = new Promise((resolve, reject) => {
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size) chunks.push(event.data);
+      },);
+      recorder.addEventListener('stop', () => {
+        stream.getTracks().forEach((track) => {
+          track.stop();
+        },);
+        resolve(new Blob(chunks, { type: recorder.mimeType || 'video/webm' }));
+      },);
+      recorder.addEventListener('error', () => {
+        reject(new Error('视频没有生成'));
+      },);
+    },);
+    recorder.start(200);
+    for (let index = 0; index < slides.length; index += 1) {
+      if (onProgress) onProgress('正在按步骤生成视频 ' + (index + 1) + ' / ' + slides.length);
+      paintVideoSlide(ctx, slides[index]);
+      await sleep(slides[index].ms);
+    }
+    recorder.stop();
+    return await done;
+  } finally {
+    canvas.remove();
+  }
+}
+
+document.getElementById('video').addEventListener('click', async () => {
+  if (!guide || !guide.steps || !guide.steps.length) {
+    document.getElementById('status').textContent = '还没有步骤。先把操作录成步骤，再生成视频。';
+    return;
+  }
+  const button = document.getElementById('video');
+  button.disabled = true;
+  button.textContent = '正在生成';
+  try {
+    const blob = await buildStepVideo(guide, (text) => {
+      document.getElementById('status').textContent = text;
+    },);
+    downloadBlob(safeFileName(guide.title) + '.webm', blob);
+    document.getElementById('status').textContent = '视频已按当前步骤生成。改完步骤可以再下载一次。';
+  } catch (error) {
+    document.getElementById('status').textContent = '视频没有生成。';
+  } finally {
+    button.disabled = false;
+    button.textContent = '下载视频';
+  }
+},);
+
 document.getElementById('preview').addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('guide.html') });
+},);
+
+let previewPages = [];
+let previewUrls = [];
+let previewIndex = 0;
+
+function revokePreview() {
+  previewUrls.forEach((url) => {
+    URL.revokeObjectURL(url);
+  },);
+  previewUrls = [];
+  previewPages = [];
+}
+
+function showPreviewPage() {
+  const total = previewUrls.length;
+  const img = document.getElementById('pdf-preview-image');
+  img.src = previewUrls[previewIndex] || '';
+  document.getElementById('pdf-preview-index').textContent = (previewIndex + 1) + ' / ' + total;
+  document.getElementById('pdf-preview-prev').disabled = previewIndex <= 0;
+  document.getElementById('pdf-preview-next').disabled = previewIndex >= total - 1;
+}
+
+function closePdfPreview() {
+  revokePreview();
+  document.getElementById('pdf-preview').hidden = true;
+  document.getElementById('pdf-preview-image').removeAttribute('src');
+}
+
+async function openPdfPreview() {
+  if (!guide) return;
+  const button = document.getElementById('pdf-preview-open');
+  button.disabled = true;
+  button.textContent = '正在生成';
+  try {
+    revokePreview();
+    const pages = await renderPdfPages(guide, readPdfStyle());
+    previewPages = pages;
+    previewUrls = pages.map((page) => {
+      return URL.createObjectURL(new Blob([page.bytes], { type: 'image/jpeg' }));
+    },);
+    previewIndex = 0;
+    showPreviewPage();
+    document.getElementById('pdf-preview').hidden = false;
+  } catch (error) {
+    const detail = error && error.message ? error.message : '';
+    document.getElementById('status').textContent = 'PDF 预览没有生成。' + detail;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'PDF 预览';
+  }
+}
+
+document.getElementById('pdf-preview-open').addEventListener('click', () => {
+  openPdfPreview();
+},);
+document.getElementById('pdf-preview-prev').addEventListener('click', () => {
+  if (previewIndex <= 0) return;
+  previewIndex -= 1;
+  showPreviewPage();
+},);
+document.getElementById('pdf-preview-next').addEventListener('click', () => {
+  if (previewIndex >= previewUrls.length - 1) return;
+  previewIndex += 1;
+  showPreviewPage();
+},);
+document.getElementById('pdf-preview-close').addEventListener('click', closePdfPreview);
+document.getElementById('pdf-preview-download').addEventListener('click', () => {
+  if (!guide || !previewPages.length) return;
+  const bytes = buildPdf(previewPages);
+  const file = new Blob([bytes], { type: 'application/pdf' });
+  downloadBlob(safeFileName(guide.title) + '.pdf', file);
 },);
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -666,6 +1297,10 @@ ask({ type: 'GET_STATE' }).then((response) => {
   render();
 },);
 
+document.getElementById('pdf-steps').addEventListener('input', () => {
+  setStepsPerPage(document.getElementById('pdf-steps').value);
+  savePdfStyle();
+},);
 document.getElementById('pdf-style').addEventListener('change', savePdfStyle);
 document.getElementById('pdf-style').addEventListener('input', (event) => {
   const target = event.target;
@@ -685,6 +1320,65 @@ document.getElementById('pdf-style').addEventListener('input', (event) => {
   if (target.id === 'pdf-line-gap') {
     setRange('pdf-line-gap', 'pdf-line-gap-label', target.value, 0, 32, PDF_DEFAULT.lineGap, '');
   }
+  if (target.id === 'pdf-logo-size') {
+    setRange('pdf-logo-size', 'pdf-logo-size-label', target.value, 8, 40, PDF_DEFAULT.logoSize, '%');
+  }
+  if (target.id === 'pdf-watermark-size') {
+    setRange(
+      'pdf-watermark-size',
+      'pdf-watermark-size-label',
+      target.value,
+      16,
+      70,
+      PDF_DEFAULT.watermarkSize,
+      '%',
+    );
+  }
+  if (target.id === 'pdf-watermark-opacity') {
+    setRange(
+      'pdf-watermark-opacity',
+      'pdf-watermark-opacity-label',
+      target.value,
+      8,
+      70,
+      PDF_DEFAULT.watermarkOpacity,
+      '%',
+    );
+  }
+  savePdfStyle();
+},);
+document.getElementById('pdf-logo-file').addEventListener('change', async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  try {
+    pdfMarkData.logo = await readMarkFile(file);
+    paintMarkState();
+    savePdfStyle();
+  } catch (error) {
+    document.getElementById('status').textContent = '商标没有读出来。请换一张 8MB 以内的图片。';
+  }
+},);
+document.getElementById('pdf-watermark-file').addEventListener('change', async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  try {
+    pdfMarkData.watermark = await readMarkFile(file);
+    paintMarkState();
+    savePdfStyle();
+  } catch (error) {
+    document.getElementById('status').textContent = '水印没有读出来。请换一张 8MB 以内的图片。';
+  }
+},);
+document.getElementById('pdf-logo-clear').addEventListener('click', () => {
+  pdfMarkData.logo = '';
+  document.getElementById('pdf-logo-file').value = '';
+  paintMarkState();
+  savePdfStyle();
+},);
+document.getElementById('pdf-watermark-clear').addEventListener('click', () => {
+  pdfMarkData.watermark = '';
+  document.getElementById('pdf-watermark-file').value = '';
+  paintMarkState();
   savePdfStyle();
 },);
 document.getElementById('pdf-reset').addEventListener('click', () => {
@@ -699,6 +1393,7 @@ document.getElementById('panel-style').addEventListener('input', (event) => {
     document.getElementById('panel-ink').value = theme.ink;
     document.getElementById('panel-accent').value = theme.accent;
     document.getElementById('panel-title-color').value = theme.ink;
+    document.getElementById('panel-step-title-color').value = theme.ink;
     document.getElementById('panel-note-color').value = theme.ink;
   }
   if (target.id === 'panel-font') {
@@ -711,8 +1406,20 @@ document.getElementById('panel-style').addEventListener('input', (event) => {
   if (target.id === 'panel-radius') {
     setRange('panel-radius', 'panel-radius-label', target.value, 0, 16, PANEL_DEFAULT.radius, '');
   }
+  if (target.id === 'panel-opacity') setTransparency(target.value);
   if (target.id === 'panel-title-size') {
     setRange('panel-title-size', 'panel-title-size-label', target.value, 14, 36, PANEL_DEFAULT.titleSize, '');
+  }
+  if (target.id === 'panel-step-title-size') {
+    setRange(
+      'panel-step-title-size',
+      'panel-step-title-size-label',
+      target.value,
+      14,
+      36,
+      PANEL_DEFAULT.stepTitleSize,
+      '',
+    );
   }
   if (target.id === 'panel-note-size') {
     setRange('panel-note-size', 'panel-note-size-label', target.value, 12, 28, PANEL_DEFAULT.noteSize, '');

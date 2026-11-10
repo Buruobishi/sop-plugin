@@ -48,7 +48,6 @@ function markdownPackage(guide) {
   (guide.steps || []).forEach((step, index) => {
     lines.push('## ' + (index + 1) + '. ' + step.text, '');
     if (step.note) lines.push(step.note, '');
-    if (step.url) lines.push('页面：' + step.url, '');
     if (step.image) {
       const imageName = stepImageName(guide, step, index, usedNames);
       const alt = String(step.text || '步骤' + (index + 1)).replace(/[\[\]]/g, '');
@@ -164,7 +163,6 @@ function toPlainText(guide) {
   guide.steps.forEach((step, index) => {
     lines.push((index + 1) + '. ' + step.text);
     if (step.note) lines.push('   ' + step.note);
-    if (step.url) lines.push('   页面：' + step.url);
   },);
   return lines.join('\n');
 }
@@ -176,7 +174,6 @@ function toHtml(guide) {
         ? '<div class="shot"><img alt="步骤截图，橙色圆点是点击位置" src="' + step.image + '"></div>'
         : "<p class='url'>这一步没有截到画面。</p>";
       const note = step.note ? "<p class='note'>" + escapeHtml(step.note) + '</p>' : '';
-      const url = step.url ? '<p class="url">' + escapeHtml(step.url) + '</p>' : '';
       return (
         '<article class="step"><h2><span>' +
         (index + 1) +
@@ -184,7 +181,6 @@ function toHtml(guide) {
         escapeHtml(step.text) +
         '</h2>' +
         note +
-        url +
         shot +
         '</article>'
       );
@@ -212,7 +208,9 @@ function toHtml(guide) {
     '</style></head><body><main><h1>' +
     escapeHtml(guide.title || '未命名流程') +
     '</h1>' +
-    (guide.description ? "<p class='lead'>" + escapeHtml(guide.description) + '</p>' : '') +
+    (guide.description
+      ? "<p class='lead'>" + escapeHtml(guide.description).replace(/\n/g, '<br>') + '</p>'
+      : '') +
     when +
     steps +
     '</main></body></html>'

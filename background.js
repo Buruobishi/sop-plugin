@@ -10,6 +10,37 @@ function isWebUrl(url) {
   return Boolean(url && (url.startsWith('http://') || url.startsWith('https://')));
 }
 
+function uniqueStepUrls() {
+  const urls = [];
+  (guide.steps || []).forEach((step) => {
+    if (isWebUrl(step.url) && urls.indexOf(step.url) < 0) urls.push(step.url);
+  },);
+  return urls;
+}
+
+function descriptionWithPageUrls(text, urls) {
+  const intro = String(text || '')
+    .split('\n')
+    .filter((line) => !isWebUrl(line.trim()))
+    .join('\n')
+    .trim();
+  const lines = [];
+  if (intro) lines.push(intro);
+  urls.forEach((url) => {
+    const next = lines.concat([url]).join('\n');
+    if (next.length <= 1000) lines.push(url);
+  },);
+  return lines.join('\n');
+}
+
+function syncDescriptionUrls() {
+  if (guide.descriptionAuto === false) return false;
+  const next = descriptionWithPageUrls(guide.description, uniqueStepUrls());
+  if (next === (guide.description || '')) return false;
+  guide.description = next;
+  return true;
+}
+
 async function init() {
   if (!ready) {
     ready = loadGuide()
@@ -108,8 +139,8 @@ async function shrink(dataUrl, xPct, yPct) {
 
 function mosaicRegion(width, height, box, xPct, yPct) {
   if (box && box.w > 0 && box.h > 0) {
-    const padX = Math.max(4, width * 0.006);
-    const padY = Math.max(3, height * 0.006);
+    const padX = Math.max(8, width * 0.012);
+    const padY = Math.max(6, height * 0.012);
     return {
       x: (box.x / 100) * width - padX,
       y: (box.y / 100) * height - padY,
@@ -118,8 +149,8 @@ function mosaicRegion(width, height, box, xPct, yPct) {
     };
   }
   if (xPct == null || yPct == null) return null;
-  const w = Math.max(96, width * 0.34);
-  const h = Math.max(32, height * 0.08);
+  const w = Math.max(120, width * 0.38);
+  const h = Math.max(48, height * 0.1);
   return {
     x: (xPct / 100) * width - w / 2,
     y: (yPct / 100) * height - h / 2,
@@ -130,20 +161,39 @@ function mosaicRegion(width, height, box, xPct, yPct) {
 
 function drawMosaic(ctx, region) {
   if (!region) return;
+  const canvas = ctx.canvas;
   const x = Math.max(0, Math.floor(region.x));
   const y = Math.max(0, Math.floor(region.y));
-  const w = Math.min(ctx.canvas.width - x, Math.ceil(region.w));
-  const h = Math.min(ctx.canvas.height - y, Math.ceil(region.h));
+  const w = Math.min(canvas.width - x, Math.ceil(region.w));
+  const h = Math.min(canvas.height - y, Math.ceil(region.h));
   if (w < 2 || h < 2) return;
-  const block = Math.max(12, Math.round(Math.min(w, h) / 5));
-  const sampleWidth = Math.max(1, Math.round(w / block));
-  const sampleHeight = Math.max(1, Math.round(h / block));
-  const sample = new OffscreenCanvas(sampleWidth, sampleHeight);
-  const sampleContext = sample.getContext('2d');
-  sampleContext.drawImage(ctx.canvas, x, y, w, h, 0, 0, sampleWidth, sampleHeight);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(sample, 0, 0, sampleWidth, sampleHeight, x, y, w, h);
-  ctx.imageSmoothingEnabled = true;
+  const block = Math.max(18, Math.round(Math.min(w, h) / 3));
+  const image = ctx.getImageData(x, y, w, h);
+  const data = image.data;
+  for (let by = 0; by < h; by += block) {
+    for (let bx = 0; bx < w; bx += block) {
+      const sx = Math.min(bx + Math.floor(block / 2), w - 1);
+      const sy = Math.min(by + Math.floor(block / 2), h - 1);
+      const index = (sy * w + sx) * 4;
+      const red = data[index];
+      const green = data[index + 1];
+      const blue = data[index + 2];
+      const alpha = data[index + 3];
+      const blockWidth = Math.min(block, w - bx);
+      const blockHeight = Math.min(block, h - by);
+      for (let py = 0; py < blockHeight; py += 1) {
+        let cursor = ((by + py) * w + bx) * 4;
+        for (let px = 0; px < blockWidth; px += 1) {
+          data[cursor] = red;
+          data[cursor + 1] = green;
+          data[cursor + 2] = blue;
+          data[cursor + 3] = alpha;
+          cursor += 4;
+        }
+      }
+    }
+  }
+  ctx.putImageData(image, x, y);
 }
 
 async function mosaicImage(dataUrl, box, xPct, yPct) {
@@ -226,6 +276,7 @@ async function addStep(partial, tabId) {
     sensitive: Boolean(partial.sensitive),
   };
   guide.steps.push(step);
+  syncDescriptionUrls();
   await persist();
 }
 
@@ -308,6 +359,7 @@ async function setRecording(on, tab) {
   guide.recording = on;
   if (on && !guide.startedAt) guide.startedAt = Date.now();
   if (on) await applyPageDefaults(tab);
+  syncDescriptionUrls();
   await persist();
   if (on) await injectAll();
   const tabs = await chrome.tabs.query({});
@@ -399,7 +451,9 @@ async function handle(message, sender) {
   await init();
   if (message.type === 'GET_STATE') {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (await applyPageDefaults(tab)) await persist();
+    const pageChanged = await applyPageDefaults(tab);
+    const urlsChanged = syncDescriptionUrls();
+    if (pageChanged || urlsChanged) await persist();
     return { ok: true, guide };
   }
   if (message.type === 'SET_RECORDING') {
