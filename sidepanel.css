@@ -1,29 +1,29 @@
 :root {
   color-scheme: light;
-  --ink: #1c1915;
-  --muted: #6d655b;
-  --line: #e4dccf;
-  --paper: #f7f4ee;
-  --paper-fill: #f7f4ee;
-  --accent: #c2410c;
+  --ink: #241b4a;
+  --muted: #6d678c;
+  --line: #ddd7f0;
+  --paper: #f3f1fb;
+  --paper-fill: #f3f1fb;
+  --accent: #5b46f5;
   --surface: #ffffff;
   --surface-fill: #ffffff;
   --font-size: 13px;
   --title-size: 18px;
-  --title-color: #1c1915;
+  --title-color: #241b4a;
   --title-weight: 600;
   --step-title-size: 18px;
-  --step-title-color: #1c1915;
+  --step-title-color: #241b4a;
   --step-title-weight: 600;
   --note-size: 13px;
-  --note-color: #1c1915;
+  --note-color: #241b4a;
   --note-weight: 400;
   --line-height: 1.45;
   --pad-x: 14px;
   --pad-y: 12px;
   --gap: 8px;
   --step-gap: 12px;
-  --radius: 8px;
+  --radius: 14px;
 }
 
 * {
@@ -68,13 +68,6 @@ body {
 header {
   padding: var(--pad-y) var(--pad-x) var(--gap);
   border-bottom: 1px solid var(--line);
-}
-
-.eyebrow {
-  margin: 0 0 6px;
-  color: var(--muted);
-  font-size: 0.85em;
-  letter-spacing: 0.08em;
 }
 
 .field {
@@ -144,15 +137,17 @@ textarea.step-title {
 #toggle {
   width: 100%;
   border: 0;
-  border-radius: var(--radius);
-  background: var(--ink);
-  color: var(--paper);
-  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  padding: 10px 12px;
+  font-weight: 650;
   cursor: pointer;
 }
 
 #toggle.live {
-  background: var(--accent);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 #status {
@@ -320,6 +315,20 @@ footer {
   grid-column: 1 / -1;
 }
 
+.pdf-sign {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.pdf-sign textarea {
+  width: 100%;
+  min-height: 4.5em;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-fill);
+  padding: 6px 8px;
+}
+
 .pdf-file {
   position: relative;
   display: inline-flex;
@@ -391,7 +400,7 @@ button {
   border: 1px solid var(--line);
   background: var(--surface-fill);
   color: var(--ink);
-  border-radius: var(--radius);
+  border-radius: 999px;
   padding: 7px 8px;
   cursor: pointer;
 }
@@ -416,13 +425,24 @@ button:hover {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-fill);
+  box-shadow: 0 8px 24px rgba(36, 27, 74, 0.06);
+}
+
+.step.resume-here {
+  outline: 2px solid var(--accent);
 }
 
 .num {
-  padding-top: 1.35em;
-  color: var(--accent);
-  font-weight: 650;
-  line-height: 1.3;
+  width: 22px;
+  height: 22px;
+  margin-top: 1.35em;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
 }
 
 .shot {
@@ -478,6 +498,7 @@ textarea:focus {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--gap);
   margin-top: 6px;
 }

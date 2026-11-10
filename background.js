@@ -33,6 +33,49 @@ function descriptionWithPageUrls(text, urls) {
   return lines.join('\n');
 }
 
+function effectiveTitle() {
+  const custom = String(guide.customTitle || '').trim();
+  if (custom) return custom.slice(0, 80);
+  const page = String(guide.pageTitle || '').trim();
+  if (page) return page.slice(0, 80);
+  return '未命名流程';
+}
+
+function normalizeTitle() {
+  if (guide.customTitle == null) {
+    if (guide.titleAuto === false && guide.title && guide.title !== '未命名流程') {
+      guide.customTitle = guide.title;
+    } else {
+      guide.customTitle = '';
+      if (!guide.pageTitle && guide.title && guide.title !== '未命名流程') guide.pageTitle = guide.title;
+    }
+  }
+  guide.customTitle = String(guide.customTitle || '');
+  guide.pageTitle = String(guide.pageTitle || '');
+  guide.title = effectiveTitle();
+}
+
+function refreshPageTitle(tab, pageTitle) {
+  const fromPage = String(pageTitle || '').replace(/\s+/g, ' ').trim();
+  const fromTab = tab && isWebUrl(tab.url) ? String(tab.title || '') : '';
+  const incoming = (fromPage || fromTab).replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!incoming) return false;
+  const hasCustom = Boolean(String(guide.customTitle || '').trim());
+  const hasSteps = Boolean(guide.steps && guide.steps.length);
+  const follow = !hasCustom && !hasSteps;
+  let changed = false;
+  if (incoming && (follow || !guide.pageTitle) && guide.pageTitle !== incoming) {
+    guide.pageTitle = incoming;
+    changed = true;
+  }
+  const next = effectiveTitle();
+  if (guide.title !== next) {
+    guide.title = next;
+    changed = true;
+  }
+  return changed;
+}
+
 function syncDescriptionUrls() {
   if (guide.descriptionAuto === false) return false;
   const next = descriptionWithPageUrls(guide.description, uniqueStepUrls());
@@ -46,6 +89,7 @@ async function init() {
     ready = loadGuide()
       .then(async (saved) => {
         guide = saved;
+        normalizeTitle();
         if (guide.recording) await injectAll();
         syncBadge();
         chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
@@ -125,16 +169,18 @@ function dataUrlToBlob(dataUrl) {
 async function shrink(dataUrl, xPct, yPct) {
   const blob = dataUrlToBlob(dataUrl);
   const bitmap = await createImageBitmap(blob);
-  const scale = Math.min(1, 1440 / bitmap.width);
+  const scale = Math.min(1, 2560 / bitmap.width);
   const width = Math.max(1, Math.round(bitmap.width * scale));
   const height = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = new OffscreenCanvas(width, height);
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(bitmap, 0, 0, width, height);
   drawClick(ctx, width, height, xPct, yPct);
-  const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.72 });
+  const png = await canvas.convertToBlob({ type: 'image/png' });
   bitmap.close();
-  return blobToDataUrl(jpeg);
+  return blobToDataUrl(png);
 }
 
 function mosaicRegion(width, height, box, xPct, yPct) {
@@ -204,8 +250,8 @@ async function mosaicImage(dataUrl, box, xPct, yPct) {
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
   drawMosaic(ctx, mosaicRegion(canvas.width, canvas.height, box, xPct, yPct));
-  const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.72 });
-  return blobToDataUrl(jpeg);
+  const png = await canvas.convertToBlob({ type: 'image/png' });
+  return blobToDataUrl(png);
 }
 
 async function captureTab(tab) {
@@ -275,9 +321,21 @@ async function addStep(partial, tabId) {
     box: partial.box || null,
     sensitive: Boolean(partial.sensitive),
   };
-  guide.steps.push(step);
+  placeStep(step);
   syncDescriptionUrls();
   await persist();
+}
+
+function placeStep(step) {
+  const afterIndex = guide.steps.findIndex((item) => {
+    return item.id === guide.insertAfterId;
+  },);
+  if (afterIndex >= 0) {
+    guide.steps.splice(afterIndex + 1, 0, step);
+    guide.insertAfterId = step.id;
+    return;
+  }
+  guide.steps.push(step);
 }
 
 function enqueueCapture(partial, tabId) {
@@ -321,31 +379,32 @@ function collectPageProfile() {
   return { title, intro: clean(intro).slice(0, 1000) };
 }
 
-async function applyPageDefaults(tab) {
-  if (!tab || !tab.id || !isWebUrl(tab.url)) return false;
-  const titleIsDefault = !guide.title || guide.title === '未命名流程';
-  const fillTitle = guide.titleAuto === true || (guide.titleAuto !== false && titleIsDefault);
-  const fillDescription = guide.descriptionAuto === true
-    || (guide.descriptionAuto !== false && !guide.description);
-  if (!fillTitle && !fillDescription) return false;
-  let profile = null;
+async function readPageProfile(tab) {
+  if (!tab || !tab.id || !isWebUrl(tab.url)) return null;
   try {
     const injected = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: collectPageProfile,
     },);
-    profile = injected && injected[0] ? injected[0].result : null;
+    return injected && injected[0] ? injected[0].result : null;
   } catch (error) {
-    profile = null;
+    return null;
   }
-  const title = String((profile && profile.title) || tab.title || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+async function applyPageDefaults(tab) {
+  if (!tab || !tab.id || !isWebUrl(tab.url)) return false;
+  const hasCustom = Boolean(String(guide.customTitle || '').trim());
+  const hasSteps = Boolean(guide.steps && guide.steps.length);
+  const fillDescription = guide.descriptionAuto === true
+    || (guide.descriptionAuto !== false && !guide.description);
+  const profile = !hasCustom && (!hasSteps || fillDescription || !guide.pageTitle)
+    ? await readPageProfile(tab)
+    : null;
+  const titleChanged = refreshPageTitle(tab, profile && profile.title);
+  if (!fillDescription) return titleChanged;
   const intro = String((profile && profile.intro) || '').replace(/\s+/g, ' ').trim().slice(0, 1000);
-  let changed = false;
-  if (fillTitle && title && title !== guide.title) {
-    guide.title = title;
-    guide.titleAuto = true;
-    changed = true;
-  }
+  let changed = titleChanged;
   if (fillDescription && intro && intro !== guide.description) {
     guide.description = intro;
     guide.descriptionAuto = true;
@@ -354,10 +413,19 @@ async function applyPageDefaults(tab) {
   return changed;
 }
 
-async function setRecording(on, tab) {
+async function setRecording(on, tab, insertAfterId, titleText) {
   await init();
   guide.recording = on;
+  guide.insertAfterId = on ? (insertAfterId || null) : null;
   if (on && !guide.startedAt) guide.startedAt = Date.now();
+  if (on) {
+    const typed = String(titleText || '').trim().slice(0, 80);
+    const hasCustom = Boolean(String(guide.customTitle || '').trim());
+    if (typed && typed !== '未命名流程' && !hasCustom) {
+      guide.pageTitle = typed;
+      guide.title = effectiveTitle();
+    }
+  }
   if (on) await applyPageDefaults(tab);
   syncDescriptionUrls();
   await persist();
@@ -440,6 +508,18 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
   );
 },);
 
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (!info.title || !isWebUrl(tab && tab.url)) return;
+  await init();
+  const hasCustom = Boolean(String(guide.customTitle || '').trim());
+  const hasSteps = Boolean(guide.steps && guide.steps.length);
+  if (hasCustom || hasSteps) return;
+  const tabs = await chrome.tabs.query({ active: true });
+  const visible = tabs.some((item) => item.id === tabId);
+  if (!visible) return;
+  if (refreshPageTitle(tab, info.title)) await persist();
+},);
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handle(message, sender).then(sendResponse).catch((error) => {
     sendResponse({ ok: false, error: String(error) });
@@ -447,18 +527,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 },);
 
+async function activeWebTab() {
+  const queries = [
+    { active: true, lastFocusedWindow: true },
+    { active: true },
+  ];
+  for (let index = 0; index < queries.length; index += 1) {
+    try {
+      const tabs = await chrome.tabs.query(queries[index]);
+      for (let tabIndex = 0; tabIndex < tabs.length; tabIndex += 1) {
+        if (isWebUrl(tabs[tabIndex].url)) return tabs[tabIndex];
+      }
+    } catch (error) {
+      /* 忽略失败 */
+    }
+  }
+  return null;
+}
+
 async function handle(message, sender) {
   await init();
   if (message.type === 'GET_STATE') {
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const tab = await activeWebTab();
     const pageChanged = await applyPageDefaults(tab);
     const urlsChanged = syncDescriptionUrls();
     if (pageChanged || urlsChanged) await persist();
     return { ok: true, guide };
   }
   if (message.type === 'SET_RECORDING') {
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    await setRecording(Boolean(message.on), tab);
+    const tab = await activeWebTab();
+    await setRecording(Boolean(message.on), tab, message.insertAfterId || null, message.title || '');
+    return { ok: true, guide };
+  }
+  if (message.type === 'CONTINUE_AFTER') {
+    const id = guide.steps.some((item) => {
+      return item.id === message.id;
+    },) ? message.id : null;
+    if (guide.recording) {
+      guide.insertAfterId = id;
+      await persist();
+    } else {
+      const tab = await activeWebTab();
+      await setRecording(true, tab, id);
+    }
     return { ok: true, guide };
   }
   if (message.type === 'EVENT') {
@@ -467,9 +578,28 @@ async function handle(message, sender) {
     await enqueueCapture(message.event, tabId);
     return { ok: true };
   }
+  if (message.type === 'SET_PAGE_TITLE') {
+    const incoming = String(message.title || '').trim().slice(0, 80);
+    const hasCustom = Boolean(String(guide.customTitle || '').trim());
+    const hasSteps = Boolean(guide.steps && guide.steps.length);
+    if (incoming && !hasCustom && (!hasSteps || !guide.pageTitle) && guide.pageTitle !== incoming) {
+      guide.pageTitle = incoming;
+      guide.title = effectiveTitle();
+      await persist();
+    }
+    return { ok: true, guide };
+  }
   if (message.type === 'UPDATE_TITLE') {
-    guide.title = String(message.title || '').slice(0, 80) || '未命名流程';
-    guide.titleAuto = false;
+    const typed = String(message.title || '').trim().slice(0, 80);
+    const page = String(guide.pageTitle || '').trim();
+    if (!typed || typed === page || typed === '未命名流程') {
+      guide.customTitle = '';
+      guide.titleAuto = true;
+    } else {
+      guide.customTitle = typed;
+      guide.titleAuto = false;
+    }
+    guide.title = effectiveTitle();
     await persist();
     return { ok: true, guide };
   }
@@ -492,6 +622,7 @@ async function handle(message, sender) {
     guide.steps = guide.steps.filter((item) => {
       return item.id !== message.id;
     },);
+    if (guide.insertAfterId === message.id) guide.insertAfterId = null;
     await persist();
     return { ok: true, guide };
   }
@@ -510,8 +641,7 @@ async function handle(message, sender) {
   if (message.type === 'ADD_NOTE') {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     const shot = tab && tab.id && isWebUrl(tab.url) ? await shotOf(tab.id, null, null) : { image: null, error: '' };
-    const image = shot.image;
-    guide.steps.push({
+    placeStep({
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       ts: Date.now(),
       kind: 'note',
@@ -519,7 +649,7 @@ async function handle(message, sender) {
       note: message.text || '',
       url: tab && tab.url ? tab.url : '',
       pageTitle: tab && tab.title ? tab.title : '',
-      image,
+      image: shot.image,
       xPct: null,
       yPct: null,
       sensitive: false,

@@ -21,9 +21,12 @@ function openSopDb() {
 function emptyGuide() {
   return {
     title: '未命名流程',
+    customTitle: '',
+    pageTitle: '',
     description: '',
     recording: false,
     startedAt: null,
+    insertAfterId: null,
     steps: [],
   };
 }

@@ -9,9 +9,8 @@
     <div id="panel-shell">
     <div class="main">
       <header>
-        <p class="eyebrow">网页步骤录制</p>
-        <label class="field" for="title">标题</label>
-        <input id="title" maxlength="80" aria-label="标题" placeholder="这段流程叫什么">
+        <label class="field" for="title">SOP标题</label>
+        <input id="title" maxlength="80" aria-label="SOP标题">
         <label class="field note-label" for="description">说明</label>
         <textarea id="description" maxlength="1000" rows="2" aria-label="说明" placeholder="适用情况、做完要确认什么"></textarea>
       </header>
@@ -22,15 +21,15 @@
           <div class="pdf-grid">
             <label class="pdf-span">风格
               <select id="panel-theme">
-                <option value="paper" selected>纸色</option>
+                <option value="paper" selected>浅紫</option>
                 <option value="light">浅色</option>
                 <option value="dark">深色</option>
                 <option value="contrast">高对比</option>
               </select>
             </label>
-            <label>背景 <input id="panel-paper" type="color" value="#f7f4ee"></label>
-            <label>文字 <input id="panel-ink" type="color" value="#1c1915"></label>
-            <label>强调 <input id="panel-accent" type="color" value="#c2410c"></label>
+            <label>背景 <input id="panel-paper" type="color" value="#f3f1fb"></label>
+            <label>文字 <input id="panel-ink" type="color" value="#241b4a"></label>
+            <label>强调 <input id="panel-accent" type="color" value="#5b46f5"></label>
             <label class="pdf-span">字号
               <input id="panel-font" type="range" min="12" max="20" step="1" value="13">
               <span id="panel-font-label" class="pdf-range-label">13</span>
@@ -44,8 +43,8 @@
               <span id="panel-leading-label" class="pdf-range-label">1.45</span>
             </label>
             <label class="pdf-span">圆角
-              <input id="panel-radius" type="range" min="0" max="16" step="1" value="8">
-              <span id="panel-radius-label" class="pdf-range-label">8</span>
+              <input id="panel-radius" type="range" min="0" max="16" step="1" value="14">
+              <span id="panel-radius-label" class="pdf-range-label">14</span>
             </label>
             <label class="pdf-span">透明度
               <input id="panel-opacity" type="range" min="0" max="60" step="5" value="0">
@@ -53,7 +52,7 @@
             </label>
             <p class="pdf-group">标题</p>
             <div class="pdf-span pdf-inline">
-              <label>颜色 <input id="panel-title-color" type="color" value="#1c1915"></label>
+              <label>颜色 <input id="panel-title-color" type="color" value="#241b4a"></label>
               <label><input id="panel-title-bold" type="checkbox" checked> 加粗</label>
             </div>
             <label class="pdf-span">字号
@@ -62,7 +61,7 @@
             </label>
             <p class="pdf-group">步骤标题</p>
             <div class="pdf-span pdf-inline">
-              <label>颜色 <input id="panel-step-title-color" type="color" value="#1c1915"></label>
+              <label>颜色 <input id="panel-step-title-color" type="color" value="#241b4a"></label>
               <label><input id="panel-step-title-bold" type="checkbox" checked> 加粗</label>
             </div>
             <label class="pdf-span">字号
@@ -71,7 +70,7 @@
             </label>
             <p class="pdf-group">说明</p>
             <div class="pdf-span pdf-inline">
-              <label>颜色 <input id="panel-note-color" type="color" value="#1c1915"></label>
+              <label>颜色 <input id="panel-note-color" type="color" value="#241b4a"></label>
               <label><input id="panel-note-bold" type="checkbox"> 加粗</label>
             </div>
             <label class="pdf-span">字号
@@ -84,10 +83,10 @@
         <details class="pdf-style" id="pdf-style">
           <summary>PDF 样式</summary>
           <div class="pdf-grid">
-            <label>纸色 <input id="pdf-paper" type="color" value="#f7f4ee"></label>
-            <label>文字 <input id="pdf-ink" type="color" value="#1c1915"></label>
-            <label>辅助色 <input id="pdf-muted" type="color" value="#6d655b"></label>
-            <label>强调色 <input id="pdf-accent" type="color" value="#c2410c"></label>
+            <label>纸色 <input id="pdf-paper" type="color" value="#f3f1fb"></label>
+            <label>文字 <input id="pdf-ink" type="color" value="#241b4a"></label>
+            <label>辅助色 <input id="pdf-muted" type="color" value="#6d678c"></label>
+            <label>强调色 <input id="pdf-accent" type="color" value="#5b46f5"></label>
             <label>纸张
               <select id="pdf-page">
                 <option value="a3">A3</option>
@@ -143,7 +142,7 @@
             </label>
             <div class="pdf-span pdf-inline">
               <label class="pdf-file">上传商标
-                <input id="pdf-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+                <input id="pdf-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.svg">
               </label>
               <button id="pdf-logo-clear" type="button">清除</button>
               <span id="pdf-logo-state" class="pdf-mark-state">未上传</span>
@@ -173,49 +172,68 @@
             </label>
             <div class="pdf-span pdf-inline">
               <label class="pdf-file">上传水印
-                <input id="pdf-watermark-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+                <input id="pdf-watermark-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.svg">
               </label>
               <button id="pdf-watermark-clear" type="button">清除</button>
               <span id="pdf-watermark-state" class="pdf-mark-state">未上传</span>
             </div>
             <p class="pdf-group">标题</p>
             <div class="pdf-span pdf-inline">
-              <label>颜色 <input id="pdf-title-color" type="color" value="#1c1915"></label>
+              <label>颜色 <input id="pdf-title-color" type="color" value="#241b4a"></label>
               <label><input id="pdf-title-bold" type="checkbox" checked> 加粗</label>
             </div>
             <label class="pdf-span">字号
-              <input id="pdf-title-size" type="range" min="14" max="40" step="1" value="22">
-              <span id="pdf-title-size-label" class="pdf-range-label">22</span>
+              <input id="pdf-title-size" type="range" min="14" max="40" step="1" value="28">
+              <span id="pdf-title-size-label" class="pdf-range-label">28</span>
             </label>
+            <label class="pdf-span">位置
+              <select id="pdf-title-align">
+                <option value="left" selected>靠左</option>
+                <option value="center">居中</option>
+                <option value="right">靠右</option>
+              </select>
+            </label>
+            <label class="pdf-span"><input id="pdf-time" type="checkbox"> 在标题下显示记录时间</label>
+            <label class="pdf-span"><input id="pdf-title-urls" type="checkbox"> 在标题下显示涉及网址</label>
             <p class="pdf-group">步骤标题</p>
             <div class="pdf-span pdf-inline">
-              <label>颜色 <input id="pdf-step-color" type="color" value="#1c1915"></label>
+              <label>颜色 <input id="pdf-step-color" type="color" value="#241b4a"></label>
               <label><input id="pdf-step-bold" type="checkbox" checked> 加粗</label>
             </div>
             <label class="pdf-span">字号
-              <input id="pdf-step-size" type="range" min="14" max="40" step="1" value="28">
-              <span id="pdf-step-size-label" class="pdf-range-label">28</span>
+              <input id="pdf-step-size" type="range" min="14" max="40" step="1" value="20">
+              <span id="pdf-step-size-label" class="pdf-range-label">20</span>
+            </label>
+            <label class="pdf-span">位置
+              <select id="pdf-step-align">
+                <option value="left" selected>靠左</option>
+                <option value="center">居中</option>
+                <option value="right">靠右</option>
+              </select>
             </label>
             <p class="pdf-group">说明</p>
             <div class="pdf-span pdf-inline">
-              <label>颜色 <input id="pdf-note-color" type="color" value="#1c1915"></label>
+              <label>颜色 <input id="pdf-note-color" type="color" value="#241b4a"></label>
               <label><input id="pdf-note-bold" type="checkbox"> 加粗</label>
             </div>
             <label class="pdf-span">字号
-              <input id="pdf-note-size" type="range" min="12" max="32" step="1" value="18">
-              <span id="pdf-note-size-label" class="pdf-range-label">18</span>
+              <input id="pdf-note-size" type="range" min="12" max="32" step="1" value="13">
+              <span id="pdf-note-size-label" class="pdf-range-label">13</span>
             </label>
             <p class="pdf-group">间距</p>
             <label class="pdf-span">段距
-              <input id="pdf-block-gap" type="range" min="0" max="48" step="2" value="12">
-              <span id="pdf-block-gap-label" class="pdf-range-label">12</span>
+              <input id="pdf-block-gap" type="range" min="0" max="48" step="2" value="16">
+              <span id="pdf-block-gap-label" class="pdf-range-label">16</span>
             </label>
             <label class="pdf-span">行距
-              <input id="pdf-line-gap" type="range" min="0" max="32" step="1" value="8">
-              <span id="pdf-line-gap-label" class="pdf-range-label">8</span>
+              <input id="pdf-line-gap" type="range" min="0" max="32" step="1" value="6">
+              <span id="pdf-line-gap-label" class="pdf-range-label">6</span>
             </label>
             <label class="pdf-span"><input id="pdf-url" type="checkbox"> 在步骤中显示页面地址</label>
             <label class="pdf-span"><input id="pdf-labels" type="checkbox" checked> 显示「说明」</label>
+            <label class="pdf-span pdf-sign">落款
+              <textarea id="pdf-sign" rows="3" maxlength="240" placeholder="写在文末右下，可以换行"></textarea>
+            </label>
             <button id="pdf-reset" class="pdf-span" type="button">恢复默认样式</button>
           </div>
         </details>

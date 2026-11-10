@@ -167,7 +167,28 @@ function toPlainText(guide) {
   return lines.join('\n');
 }
 
-function toHtml(guide) {
+function logoAlign(position) {
+  const name = String(position || '');
+  if (!name) return '';
+  if (name.indexOf('left') >= 0) return 'left';
+  if (name.indexOf('right') >= 0) return 'right';
+  return 'center';
+}
+
+function logoMarkup(style) {
+  const src = style && typeof style.logo === 'string' ? style.logo : '';
+  if (!src || src.indexOf('data:image/') !== 0 || (style && style.logoMode === 'none')) return '';
+  const align = logoAlign(style.logoPosition) || 'right';
+  return (
+    '<header class="brand brand-' +
+    align +
+    '"><img alt="商标" src="' +
+    src +
+    '"></header>'
+  );
+}
+
+function toHtml(guide, style) {
   const steps = guide.steps
     .map((step, index) => {
       const shot = step.image
@@ -175,12 +196,13 @@ function toHtml(guide) {
         : "<p class='url'>这一步没有截到画面。</p>";
       const note = step.note ? "<p class='note'>" + escapeHtml(step.note) + '</p>' : '';
       return (
-        '<article class="step"><h2><span>' +
+        '<article class="step"><div class="copy"><h2><span>' +
         (index + 1) +
         '</span>' +
         escapeHtml(step.text) +
         '</h2>' +
         note +
+        '</div>' +
         shot +
         '</article>'
       );
@@ -189,23 +211,36 @@ function toHtml(guide) {
   const when = guide.startedAt
     ? "<p class='when'>录制时间：" + escapeHtml(new Date(guide.startedAt).toLocaleString('zh-CN')) + '</p>'
     : '';
+  const css = [
+    "body{margin:0;background:#f3f1fb;color:#241b4a;font:16px/1.6 'PingFang SC','Noto Sans SC',sans-serif}",
+    'main{max-width:960px;margin:0 auto;padding:36px 24px 80px}',
+    '.brand{display:flex;margin:0 0 18px}',
+    '.brand-left{justify-content:flex-start}',
+    '.brand-center{justify-content:center}',
+    '.brand-right{justify-content:flex-end}',
+    '.brand img{width:18%;max-width:168px;height:auto}',
+    "h1{margin:0 0 12px;font:600 32px/1.3 'PingFang SC',sans-serif}",
+    '.lead,.when{margin:0 0 18px;color:#6d678c}',
+    '.step{display:grid;grid-template-columns:minmax(200px,.42fr) minmax(0,.58fr);gap:18px;',
+    'align-items:start;margin:0 0 18px;padding:18px;border:1px solid rgba(91,70,245,.16);',
+    'border-radius:16px;background:#fff;box-shadow:0 8px 24px rgba(36,27,74,.06)}',
+    ".step h2{display:flex;gap:10px;align-items:flex-start;margin:0 0 8px;font:600 20px/1.4 'PingFang SC',sans-serif}",
+    '.step h2 span{flex:none;min-width:1.7em;height:1.7em;border-radius:999px;background:#5b46f5;',
+    'color:#fff;text-align:center;line-height:1.7em;font-size:13px}',
+    '.note{margin:0;color:#241b4a}',
+    '.url{margin:8px 0 0;color:#6d678c;font-size:13px}',
+    '.shot{border:1px solid rgba(109,103,140,.28);border-radius:12px;overflow:hidden;background:#fff}',
+    '.shot img{display:block;width:100%;height:auto}',
+    '@media (max-width:720px){.step{grid-template-columns:1fr}}',
+  ].join('');
   return (
     "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'><title>" +
     escapeHtml(guide.title || 'SOP') +
     '</title><style>' +
-    "body{margin:0;background:#f4f1ea;color:#1c1915;font:16px/1.55 'Songti SC','Iowan Old Style',Palatino,serif}" +
-    'main{max-width:880px;margin:0 auto;padding:40px 24px 80px}' +
-    'h1{font-size:32px;font-weight:600;letter-spacing:-.02em;margin:0 0 8px}' +
-    '.when{margin:0 0 28px;color:#6d655b}' +
-    '.step{margin:0 0 36px}' +
-    ".step h2{font:600 20px/1.4 'Songti SC',Palatino,serif;margin:0 0 8px}" +
-    '.step h2 span{display:inline-block;min-width:1.6em;margin-right:8px;color:#c2410c}' +
-    ".note{margin:0 0 10px;font:16px/1.55 'PingFang SC',sans-serif}" +
-    ".lead{margin:0 0 28px;font:17px/1.6 'PingFang SC',sans-serif}" +
-    '.url{margin:0 0 10px;color:#6d655b;font:13px/1.4 ui-sans-serif,sans-serif;word-break:break-all}' +
-    '.shot{position:relative;border:1px solid #e4dccf;border-radius:10px;overflow:hidden;background:#fff}' +
-    '.shot img{display:block;width:100%;height:auto}' +
-    '</style></head><body><main><h1>' +
+    css +
+    '</style></head><body><main>' +
+    logoMarkup(style) +
+    '<h1>' +
     escapeHtml(guide.title || '未命名流程') +
     '</h1>' +
     (guide.description
@@ -261,7 +296,7 @@ function buildPdf(pages) {
   addObj(1, [enc('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')]);
   addObj(2, [enc('2 0 obj\n<< /Type /Pages /Count ' + pages.length + ' /Kids [' + kids.join(' ') + '] >>\nendobj\n')]);
   plans.forEach((plan) => {
-    const jpeg = plan.page.bytes;
+    const image = plan.page.bytes;
     const pageWidth = plan.page.pageWidth;
     const pageHeight = plan.page.pageHeight;
     addObj(plan.imageId, [
@@ -271,11 +306,11 @@ function buildPdf(pages) {
           plan.page.width +
           ' /Height ' +
           plan.page.height +
-          ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' +
-          jpeg.length +
+          ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ' +
+          image.length +
           ' >>\nstream\n',
       ),
-      jpeg,
+      image,
       enc('\nendstream\nendobj\n'),
     ],);
     const content = 'q\n' + pageWidth + ' 0 0 ' + pageHeight + ' 0 0 cm\n/Im' + plan.imageId + ' Do\nQ\n';

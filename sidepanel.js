@@ -11,13 +11,28 @@ function render() {
   const status = document.getElementById('status');
   const list = document.getElementById('steps');
   if (!guide) return;
-  if (document.activeElement !== title) title.value = guide.title || '';
+  if (document.activeElement !== title) {
+    const custom = String(guide.customTitle || '').trim();
+    const pageTitle = String(guide.pageTitle || '').trim();
+    const stored = String(guide.title || '').trim();
+    const shown = custom || pageTitle || (stored === '未命名流程' ? '' : stored);
+    if (shown) title.value = shown;
+  }
   if (document.activeElement !== description) description.value = guide.description || '';
-  toggle.textContent = guide.recording ? '完成录制' : '开始录制';
+  const resumeIndex = guide.insertAfterId
+    ? guide.steps.findIndex((step) => step.id === guide.insertAfterId)
+    : -1;
+  toggle.textContent = guide.recording ? '完成录制' : (guide.steps.length ? '继续录制' : '开始录制');
   toggle.classList.toggle('live', Boolean(guide.recording));
-  status.textContent = guide.recording
-    ? '正在录制，已记 ' + guide.steps.length + ' 步。快捷键 Command+Shift+Y 可结束。密码框只记「输入密码」。'
-    : '已记 ' + guide.steps.length + ' 步。点开始后，去网页上把流程走一遍。';
+  if (guide.recording && resumeIndex >= 0) {
+    status.textContent = '正在续录，新步骤接在第 ' + (resumeIndex + 1) + ' 步后面。已记 ' + guide.steps.length + ' 步。';
+  } else if (guide.recording) {
+    status.textContent = '正在录制，已记 ' + guide.steps.length + ' 步。快捷键 Command+Shift+Y 可结束。密码框只记「输入密码」。';
+  } else if (guide.steps.length) {
+    status.textContent = '已记 ' + guide.steps.length + ' 步。继续录制会接到最后，也可以从某一步后面接着录。';
+  } else {
+    status.textContent = '点开始后，去网页上把流程走一遍。录下来的步骤可以改、排序，再导出文档和视频。';
+  }
   if (!guide.steps.length) {
     list.innerHTML = "<p class='empty'>还没有步骤。</p>";
     return;
@@ -26,6 +41,7 @@ function render() {
   guide.steps.forEach((step, index) => {
     const item = document.createElement('li');
     item.className = 'step';
+    if (guide.recording && guide.insertAfterId === step.id) item.classList.add('resume-here');
     const num = document.createElement('div');
     num.className = 'num';
     num.textContent = String(index + 1);
@@ -80,6 +96,14 @@ function render() {
     actions.appendChild(action('删除', () => {
       ask({ type: 'DELETE_STEP', id: step.id });
     },),);
+    actions.appendChild(action('在此后续录', () => {
+      ask({ type: 'CONTINUE_AFTER', id: step.id }).then((response) => {
+        if (response && response.guide) {
+          guide = response.guide;
+          render();
+        }
+      },);
+    },),);
     if (step.kind === 'type') {
       actions.appendChild(action('涂掉输入', () => {
         ask({ type: 'REDACT_STEP', id: step.id }).then((response) => {
@@ -106,9 +130,19 @@ function action(label, onClick) {
 }
 
 document.getElementById('toggle').addEventListener('click', async () => {
-  const response = await ask({ type: 'SET_RECORDING', on: !(guide && guide.recording) });
+  const starting = !(guide && guide.recording);
+  const typed = document.getElementById('title').value.trim();
+  const response = await ask({
+    type: 'SET_RECORDING',
+    on: starting,
+    title: typed,
+  });
   if (response && response.guide) {
     guide = response.guide;
+    if (starting && typed && !String(guide.pageTitle || '').trim() && !String(guide.customTitle || '').trim()) {
+      guide.pageTitle = typed;
+      guide.title = typed;
+    }
     render();
   }
 },);
@@ -196,29 +230,34 @@ const PDF_PAPER = {
 };
 
 const PDF_DEFAULT = {
-  paper: '#f7f4ee',
-  ink: '#1c1915',
-  muted: '#6d655b',
-  accent: '#c2410c',
+  paper: '#f3f1fb',
+  ink: '#241b4a',
+  muted: '#6d678c',
+  accent: '#5b46f5',
   page: 'a4',
   orientation: 'portrait',
   size: 'm',
   margin: 'm',
   image: 100,
-  titleColor: '#1c1915',
-  titleSize: 22,
+  titleColor: '#241b4a',
+  titleSize: 28,
   titleBold: true,
-  stepColor: '#1c1915',
-  stepSize: 28,
+  titleAlign: 'left',
+  stepColor: '#241b4a',
+  stepSize: 20,
   stepBold: true,
-  noteColor: '#1c1915',
-  noteSize: 18,
+  stepAlign: 'left',
+  noteColor: '#241b4a',
+  noteSize: 13,
   noteBold: false,
-  blockGap: 12,
-  lineGap: 8,
+  blockGap: 16,
+  lineGap: 6,
   stepsPerPage: 1,
   showStepUrl: false,
+  showRecordedAt: false,
+  showTitleUrls: false,
   showLabels: true,
+  signOff: '',
   logo: '',
   logoPosition: 'top-right',
   logoSize: 16,
@@ -242,6 +281,7 @@ const MARK_POSITIONS = {
 
 const pdfMarkData = {
   logo: '',
+  logoMode: 'default',
   watermark: '',
 };
 
@@ -280,6 +320,11 @@ function setImagePercent(value) {
   document.getElementById('pdf-image-label').textContent = percent + '%';
 }
 
+function textAlign(value, fallback) {
+  if (value === 'left' || value === 'center' || value === 'right') return value;
+  return fallback;
+}
+
 function markPosition(value, fallback) {
   if (value === '') return '';
   return MARK_POSITIONS[value] ? value : fallback;
@@ -290,26 +335,96 @@ function imageDataUrl(value) {
 }
 
 function paintMarkState() {
-  document.getElementById('pdf-logo-state').textContent = pdfMarkData.logo ? '已上传' : '未上传';
+  let logoState = '未上传';
+  if (pdfMarkData.logoMode === 'default' && pdfMarkData.logo) logoState = '默认商标';
+  else if (pdfMarkData.logo) logoState = '已上传';
+  document.getElementById('pdf-logo-state').textContent = logoState;
   const watermarkState = pdfMarkData.watermark ? '已上传' : '未上传';
   document.getElementById('pdf-watermark-state').textContent = watermarkState;
 }
 
-function readMarkFile(file) {
+let defaultLogoUrl = '';
+
+function loadDefaultLogo() {
+  if (defaultLogoUrl) {
+    if (pdfMarkData.logoMode === 'default') pdfMarkData.logo = defaultLogoUrl;
+    paintMarkState();
+    return Promise.resolve(defaultLogoUrl);
+  }
+  return fetch('logotext.svg')
+    .then((response) => response.blob())
+    .then((blob) => readMarkFile(new File([blob], 'logotext.svg', { type: 'image/svg+xml' })))
+    .then((url) => plateWordmark(url))
+    .then((url) => {
+      defaultLogoUrl = url;
+      if (pdfMarkData.logoMode === 'default') {
+        pdfMarkData.logo = url;
+        paintMarkState();
+        savePdfStyle();
+      }
+      return url;
+    })
+    .catch(() => '');
+}
+
+function plateWordmark(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const padX = Math.round(img.width * 0.08);
+      const padY = Math.round(img.height * 0.28);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width + padX * 2;
+      canvas.height = img.height + padY * 2;
+      const ctx = canvas.getContext('2d');
+      const radius = Math.round(canvas.height * 0.18);
+      ctx.fillStyle = '#241b4a';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, canvas.width, canvas.height, radius);
+      ctx.fill();
+      ctx.drawImage(img, padX, padY);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => {
+      resolve(dataUrl);
+    };
+    img.src = dataUrl;
+  },);
+}
+
+function isSvgFile(file) {
+  const name = String(file.name || '').toLowerCase();
+  const type = String(file.type || '').toLowerCase();
+  return type === 'image/svg+xml' || name.endsWith('.svg');
+}
+
+function svgPixelSize(text) {
+  const viewBox = text.match(/viewBox=["']\s*[0-9.+-eE]+[\s,]+[0-9.+-eE]+[\s,]+([0-9.+-eE]+)[\s,]+([0-9.+-eE]+)/);
+  if (viewBox) {
+    const width = Math.abs(Number(viewBox[1]));
+    const height = Math.abs(Number(viewBox[2]));
+    if (width > 0 && height > 0) return { width, height };
+  }
+  const widthMatch = text.match(/<svg[^>]*\bwidth=["']([0-9.]+)/);
+  const heightMatch = text.match(/<svg[^>]*\bheight=["']([0-9.]+)/);
+  const width = widthMatch ? Number(widthMatch[1]) : 0;
+  const height = heightMatch ? Number(heightMatch[1]) : 0;
+  if (width > 0 && height > 0) return { width, height };
+  return { width: 480, height: 480 };
+}
+
+function paintImageFile(file, maxEdge, allowUpscale) {
   return new Promise((resolve, reject) => {
-    if (!file || file.size > 8 * 1024 * 1024) {
-      reject(new Error('图片太大'));
-      return;
-    }
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      const maxEdge = 480;
-      const longest = Math.max(img.width, img.height) || 1;
-      const scale = Math.min(1, maxEdge / longest);
+      const sourceWidth = img.naturalWidth || img.width || 1;
+      const sourceHeight = img.naturalHeight || img.height || 1;
+      const longest = Math.max(sourceWidth, sourceHeight);
+      const scale = allowUpscale ? maxEdge / longest : Math.min(1, maxEdge / longest);
       const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(img.width * scale));
-      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+      canvas.height = Math.max(1, Math.round(sourceHeight * scale));
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
       resolve(canvas.toDataURL('image/png'));
@@ -320,6 +435,23 @@ function readMarkFile(file) {
     };
     img.src = url;
   });
+}
+
+function readMarkFile(file) {
+  if (!file || file.size > 8 * 1024 * 1024) return Promise.reject(new Error('图片太大'));
+  if (!isSvgFile(file)) return paintImageFile(file, 480, false);
+  return file.text().then((text) => {
+    const size = svgPixelSize(text);
+    const longest = Math.max(size.width, size.height) || 1;
+    const scale = 960 / longest;
+    const width = Math.max(1, Math.round(size.width * scale));
+    const height = Math.max(1, Math.round(size.height * scale));
+    const sized = text.replace(/<svg\b([^>]*)>/, (match, attrs) => {
+      const cleaned = attrs.replace(/\s(?:width|height)=["'][^"']*["']/g, '');
+      return '<svg' + cleaned + ' width="' + width + '" height="' + height + '">';
+    },);
+    return paintImageFile(new Blob([sized], { type: 'image/svg+xml' }), 960, true);
+  },);
 }
 
 function drawStoredMark(ctx, image, pageWidth, pageHeight, position, sizePercent, opacityPercent) {
@@ -360,9 +492,11 @@ function readPdfStyle() {
     titleColor: hexColor(document.getElementById('pdf-title-color').value, PDF_DEFAULT.titleColor),
     titleSize: clampInt(document.getElementById('pdf-title-size').value, 14, 40, PDF_DEFAULT.titleSize),
     titleBold: document.getElementById('pdf-title-bold').checked,
+    titleAlign: textAlign(document.getElementById('pdf-title-align').value, PDF_DEFAULT.titleAlign),
     stepColor: hexColor(document.getElementById('pdf-step-color').value, PDF_DEFAULT.stepColor),
     stepSize: clampInt(document.getElementById('pdf-step-size').value, 14, 40, PDF_DEFAULT.stepSize),
     stepBold: document.getElementById('pdf-step-bold').checked,
+    stepAlign: textAlign(document.getElementById('pdf-step-align').value, PDF_DEFAULT.stepAlign),
     noteColor: hexColor(document.getElementById('pdf-note-color').value, PDF_DEFAULT.noteColor),
     noteSize: clampInt(document.getElementById('pdf-note-size').value, 12, 32, PDF_DEFAULT.noteSize),
     noteBold: document.getElementById('pdf-note-bold').checked,
@@ -370,8 +504,12 @@ function readPdfStyle() {
     lineGap: clampInt(document.getElementById('pdf-line-gap').value, 0, 32, PDF_DEFAULT.lineGap),
     stepsPerPage: setStepsPerPage(document.getElementById('pdf-steps').value),
     showStepUrl: document.getElementById('pdf-url').checked,
+    showRecordedAt: document.getElementById('pdf-time').checked,
+    showTitleUrls: document.getElementById('pdf-title-urls').checked,
     showLabels: document.getElementById('pdf-labels').checked,
+    signOff: String(document.getElementById('pdf-sign').value || '').replace(/\r/g, '').trim().slice(0, 240),
     logo: pdfMarkData.logo,
+    logoMode: pdfMarkData.logoMode,
     logoPosition: markPosition(
       document.getElementById('pdf-logo-position').value,
       PDF_DEFAULT.logoPosition,
@@ -397,8 +535,35 @@ function readPdfStyle() {
   };
 }
 
+function migratePdfStyle(style) {
+  const saved = Object.assign({}, style || {});
+  const classic = saved.paper === '#f7f4ee' && saved.ink === '#1c1915' && saved.accent === '#c2410c';
+  const plain = saved.paper === '#ffffff' && saved.ink === '#1b1b1f' && saved.accent === '#3d348b';
+  if (Number(saved.stepSize) === 18 && Number(saved.noteSize) === 14) {
+    saved.stepSize = PDF_DEFAULT.stepSize;
+    saved.noteSize = PDF_DEFAULT.noteSize;
+  }
+  if (!classic && !plain) return saved;
+  const oldText = classic ? '#1c1915' : '#1b1b1f';
+  saved.paper = PDF_DEFAULT.paper;
+  saved.ink = PDF_DEFAULT.ink;
+  saved.muted = PDF_DEFAULT.muted;
+  saved.accent = PDF_DEFAULT.accent;
+  if (!saved.titleColor || saved.titleColor === oldText) saved.titleColor = PDF_DEFAULT.titleColor;
+  if (!saved.stepColor || saved.stepColor === oldText) saved.stepColor = PDF_DEFAULT.stepColor;
+  if (!saved.noteColor || saved.noteColor === oldText) saved.noteColor = PDF_DEFAULT.noteColor;
+  if (classic) {
+    if (saved.titleSize == null || Number(saved.titleSize) === 22) saved.titleSize = PDF_DEFAULT.titleSize;
+    if (saved.stepSize == null || Number(saved.stepSize) === 28) saved.stepSize = PDF_DEFAULT.stepSize;
+    if (saved.noteSize == null || Number(saved.noteSize) === 18) saved.noteSize = PDF_DEFAULT.noteSize;
+    if (saved.blockGap == null || Number(saved.blockGap) === 12) saved.blockGap = PDF_DEFAULT.blockGap;
+    if (saved.lineGap == null || Number(saved.lineGap) === 8) saved.lineGap = PDF_DEFAULT.lineGap;
+  }
+  return saved;
+}
+
 function applyPdfStyle(style) {
-  const saved = style || {};
+  const saved = migratePdfStyle(style);
   const next = Object.assign({}, PDF_DEFAULT, saved);
   document.getElementById('pdf-paper').value = hexColor(next.paper, PDF_DEFAULT.paper);
   document.getElementById('pdf-ink').value = hexColor(next.ink, PDF_DEFAULT.ink);
@@ -412,12 +577,14 @@ function applyPdfStyle(style) {
   document.getElementById('pdf-title-color').value = hexColor(next.titleColor, PDF_DEFAULT.titleColor);
   setRange('pdf-title-size', 'pdf-title-size-label', next.titleSize, 14, 40, PDF_DEFAULT.titleSize, '');
   document.getElementById('pdf-title-bold').checked = next.titleBold !== false;
+  document.getElementById('pdf-title-align').value = textAlign(next.titleAlign, PDF_DEFAULT.titleAlign);
   const stepColor = hexColor(saved.stepColor, hexColor(saved.titleColor, PDF_DEFAULT.stepColor));
   document.getElementById('pdf-step-color').value = stepColor;
   const stepSize = saved.stepSize == null ? PDF_DEFAULT.stepSize : saved.stepSize;
   setRange('pdf-step-size', 'pdf-step-size-label', stepSize, 14, 40, PDF_DEFAULT.stepSize, '');
   const stepBold = saved.stepBold == null ? saved.titleBold !== false : saved.stepBold !== false;
   document.getElementById('pdf-step-bold').checked = stepBold;
+  document.getElementById('pdf-step-align').value = textAlign(next.stepAlign, PDF_DEFAULT.stepAlign);
   document.getElementById('pdf-note-color').value = hexColor(next.noteColor, PDF_DEFAULT.noteColor);
   setRange('pdf-note-size', 'pdf-note-size-label', next.noteSize, 12, 32, PDF_DEFAULT.noteSize, '');
   document.getElementById('pdf-note-bold').checked = next.noteBold === true;
@@ -425,8 +592,22 @@ function applyPdfStyle(style) {
   setRange('pdf-line-gap', 'pdf-line-gap-label', next.lineGap, 0, 32, PDF_DEFAULT.lineGap, '');
   setStepsPerPage(next.stepsPerPage);
   document.getElementById('pdf-url').checked = next.showStepUrl === true;
+  document.getElementById('pdf-time').checked = next.showRecordedAt === true;
+  document.getElementById('pdf-title-urls').checked = next.showTitleUrls === true;
   document.getElementById('pdf-labels').checked = next.showLabels !== false;
-  pdfMarkData.logo = imageDataUrl(next.logo);
+  document.getElementById('pdf-sign').value = String(next.signOff || '').slice(0, 240);
+  const customLogo = imageDataUrl(saved.logo);
+  if (saved.logoMode === 'none') {
+    pdfMarkData.logo = '';
+    pdfMarkData.logoMode = 'none';
+  } else if (saved.logoMode !== 'default' && customLogo) {
+    pdfMarkData.logo = customLogo;
+    pdfMarkData.logoMode = 'custom';
+  } else {
+    pdfMarkData.logo = defaultLogoUrl;
+    pdfMarkData.logoMode = 'default';
+    if (!defaultLogoUrl) loadDefaultLogo();
+  }
   pdfMarkData.watermark = imageDataUrl(next.watermark);
   document.getElementById('pdf-logo-file').value = '';
   document.getElementById('pdf-watermark-file').value = '';
@@ -466,7 +647,7 @@ function savePdfStyle() {
 }
 
 const PANEL_THEMES = {
-  paper: { paper: '#f7f4ee', ink: '#1c1915', accent: '#c2410c' },
+  paper: { paper: '#f3f1fb', ink: '#241b4a', accent: '#5b46f5' },
   light: { paper: '#ffffff', ink: '#171717', accent: '#1d4ed8' },
   dark: { paper: '#1c1917', ink: '#f6f1e8', accent: '#fb923c' },
   contrast: { paper: '#ffffff', ink: '#000000', accent: '#b91c1c' },
@@ -474,21 +655,21 @@ const PANEL_THEMES = {
 
 const PANEL_DEFAULT = {
   theme: 'paper',
-  paper: '#f7f4ee',
-  ink: '#1c1915',
-  accent: '#c2410c',
+  paper: '#f3f1fb',
+  ink: '#241b4a',
+  accent: '#5b46f5',
   fontSize: 13,
   spacing: 14,
   leading: 145,
-  radius: 8,
+  radius: 14,
   transparency: 0,
-  titleColor: '#1c1915',
+  titleColor: '#241b4a',
   titleSize: 18,
   titleBold: true,
-  stepTitleColor: '#1c1915',
+  stepTitleColor: '#241b4a',
   stepTitleSize: 18,
   stepTitleBold: true,
-  noteColor: '#1c1915',
+  noteColor: '#241b4a',
   noteSize: 13,
   noteBold: false,
 };
@@ -577,7 +758,7 @@ function paintPanel(style) {
   const noteSize = clampInt(style.noteSize, 12, 28, PANEL_DEFAULT.noteSize);
   const root = document.documentElement;
   const dark = paperLuminance(paper) < 0.35;
-  const classic = paper.toLowerCase() === '#f7f4ee' && ink.toLowerCase() === '#1c1915';
+  const classic = paper.toLowerCase() === '#f3f1fb' && ink.toLowerCase() === '#241b4a';
   root.style.colorScheme = dark ? 'dark' : 'light';
   const transparency = clampInt(style.transparency, 0, 60, PANEL_DEFAULT.transparency);
   const alpha = (100 - transparency) / 100;
@@ -586,8 +767,8 @@ function paintPanel(style) {
   root.style.setProperty('--paper-fill', paper);
   root.style.setProperty('--ink', ink);
   root.style.setProperty('--accent', accent);
-  root.style.setProperty('--muted', classic ? '#6d655b' : mixHex(ink, paper, 0.42));
-  root.style.setProperty('--line', classic ? '#e4dccf' : mixHex(ink, paper, 0.82));
+  root.style.setProperty('--muted', classic ? '#6d678c' : mixHex(ink, paper, 0.42));
+  root.style.setProperty('--line', classic ? '#ddd7f0' : mixHex(ink, paper, 0.82));
   let surface = mixHex(paper, '#ffffff', 0.72);
   if (dark) surface = mixHex(paper, ink, 0.12);
   else if (classic) surface = '#ffffff';
@@ -616,8 +797,32 @@ function paintPanel(style) {
   root.style.setProperty('--radius', radius + 'px');
 }
 
+function panelLook(style) {
+  const saved = Object.assign({}, style || {});
+  const oldPaper = String(saved.paper || '').toLowerCase() === '#f7f4ee';
+  const oldInk = String(saved.ink || '').toLowerCase() === '#1c1915';
+  const oldAccent = String(saved.accent || '').toLowerCase() === '#c2410c';
+  const theme = saved.theme || 'paper';
+  if (theme === 'paper' && oldPaper && oldInk && oldAccent) {
+    saved.paper = PANEL_DEFAULT.paper;
+    saved.ink = PANEL_DEFAULT.ink;
+    saved.accent = PANEL_DEFAULT.accent;
+    if (String(saved.titleColor || '#1c1915').toLowerCase() === '#1c1915') {
+      saved.titleColor = PANEL_DEFAULT.titleColor;
+    }
+    if (String(saved.stepTitleColor || '#1c1915').toLowerCase() === '#1c1915') {
+      saved.stepTitleColor = PANEL_DEFAULT.stepTitleColor;
+    }
+    if (String(saved.noteColor || '#1c1915').toLowerCase() === '#1c1915') {
+      saved.noteColor = PANEL_DEFAULT.noteColor;
+    }
+    if (saved.radius == null || Number(saved.radius) === 8) saved.radius = PANEL_DEFAULT.radius;
+  }
+  return saved;
+}
+
 function applyPanelStyle(style) {
-  const saved = style || {};
+  const saved = panelLook(style);
   const next = Object.assign({}, PANEL_DEFAULT, saved);
   const theme = PANEL_THEMES[next.theme] ? next.theme : 'paper';
   document.getElementById('panel-theme').value = theme;
@@ -659,6 +864,23 @@ function savePanelStyle() {
   chrome.storage.local.set({ panelStyle: readPanelStyle() });
 }
 
+function recordedAtText(value) {
+  const time = Number(value);
+  if (!time) return '';
+  const date = new Date(time);
+  if (Number.isNaN(date.getTime())) return '';
+  return '录制时间：' + date.toLocaleString('zh-CN');
+}
+
+function involvedUrls(steps) {
+  const urls = [];
+  (steps || []).forEach((step) => {
+    const url = String((step && step.url) || '').trim();
+    if (/^https?:\/\//i.test(url) && urls.indexOf(url) < 0) urls.push(url);
+  },);
+  return urls;
+}
+
 function paperSheet(style) {
   const pair = PDF_PAPER[style.page] || PDF_PAPER.a4;
   const longSide = Math.max(pair[0], pair[1]);
@@ -666,65 +888,83 @@ function paperSheet(style) {
   const landscape = style.orientation === 'landscape';
   const pageWidth = landscape ? longSide : shortSide;
   const pageHeight = landscape ? shortSide : longSide;
+  const dpi = 288;
   return {
     pageWidth,
     pageHeight,
-    width: Math.round((pageWidth * 96) / 72),
-    height: Math.round((pageHeight * 96) / 72),
+    width: Math.round((pageWidth * dpi) / 72),
+    height: Math.round((pageHeight * dpi) / 72),
+    unit: dpi / 96,
   };
 }
 
-function canvasToJpeg(canvas) {
-  return new Promise((resolve, reject) => {
+async function canvasToPdfImage(canvas) {
+  const image = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  const rgb = new Uint8Array((image.data.length / 4) * 3);
+  const src = image.data;
+  for (let i = 0, j = 0; i < src.length; i += 4, j += 3) {
+    rgb[j] = src[i];
+    rgb[j + 1] = src[i + 1];
+    rgb[j + 2] = src[i + 2];
+  }
+  const stream = new Blob([rgb]).stream().pipeThrough(new CompressionStream('deflate'));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  const preview = await new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (!blob) {
         reject(new Error('无法生成 PDF 页面'));
         return;
       }
-      blob.arrayBuffer().then((buffer) => {
-        resolve(new Uint8Array(buffer));
-      }, reject,);
-    }, 'image/jpeg', 0.82,);
+      resolve(blob);
+    }, 'image/png',);
   },);
+  return { bytes, preview };
 }
 
-async function pushPaperPages(pages, source, sheet, paperColor, stamp) {
-  const count = Math.max(1, Math.ceil(source.height / sheet.height));
-  for (let index = 0; index < count; index += 1) {
+function pushPaperPages(sheets, source, sheet, paperColor, stamp, footerBand, contentTop) {
+  const firstBody = Math.max(1, sheet.height - footerBand);
+  const nextBody = Math.max(1, sheet.height - footerBand - contentTop);
+  let offset = 0;
+  let index = 0;
+  while (offset < source.height) {
+    const bodyH = index === 0 ? firstBody : nextBody;
+    const destY = index === 0 ? 0 : contentTop;
     const piece = document.createElement('canvas');
     piece.width = sheet.width;
     piece.height = sheet.height;
     const ctx = piece.getContext('2d');
     ctx.fillStyle = paperColor;
     ctx.fillRect(0, 0, piece.width, piece.height);
-    const offset = index * sheet.height;
-    const sliceHeight = Math.min(sheet.height, source.height - offset);
-    ctx.drawImage(source, 0, offset, source.width, sliceHeight, 0, 0, source.width, sliceHeight);
+    const sliceHeight = Math.min(bodyH, source.height - offset);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, 0, offset, source.width, sliceHeight, 0, destY, source.width, sliceHeight);
     if (stamp) stamp(ctx, piece.width, piece.height);
-    pages.push({
-      bytes: await canvasToJpeg(piece),
-      width: piece.width,
-      height: piece.height,
-      pageWidth: Math.round(sheet.pageWidth),
-      pageHeight: Math.round(sheet.pageHeight),
-    },);
+    sheets.push({ canvas: piece, contentBottom: destY + sliceHeight });
+    offset += sliceHeight;
+    index += 1;
   }
 }
 
 async function renderPdfPages(guide, style) {
   const sheet = paperSheet(style);
   const width = sheet.width;
+  const unit = sheet.unit;
+  function u(value) {
+    return Math.round(value * unit);
+  }
   let scale = 1;
   if (style.size === 's') scale = 0.85;
   else if (style.size === 'l') scale = 1.22;
   let marginPt = 48;
   if (style.margin === 's') marginPt = 32;
   else if (style.margin === 'l') marginPt = 72;
-  const pad = Math.max(24, Math.round(marginPt * (width / 794)));
+  const pad = Math.max(u(24), Math.round(marginPt * (width / 794)));
+  const footerBand = Math.min(pad, Math.max(u(32), Math.round(pad * 0.62)));
   const contentWidth = width - pad * 2;
   const font = 'PingFang SC, Noto Sans SC, sans-serif';
   function px(value) {
-    return Math.max(12, Math.round(value * scale));
+    return Math.max(u(12), Math.round(value * scale * unit));
   }
   const labelSize = px(14);
   const docSize = px(style.titleSize);
@@ -736,14 +976,42 @@ async function renderPdfPages(guide, style) {
   const stepWeight = stepIsBold ? '600 ' : '400 ';
   const stepColor = hexColor(style.stepColor, hexColor(style.titleColor, PDF_DEFAULT.stepColor));
   const noteWeight = style.noteBold ? '600 ' : '400 ';
-  const blockGap = Math.max(0, Math.round(clampInt(style.blockGap, 0, 48, 12) * scale));
-  const lineGap = Math.max(0, Math.round(clampInt(style.lineGap, 0, 32, 8) * scale));
+  const blockGap = Math.max(0, Math.round(clampInt(style.blockGap, 0, 48, 12) * scale * unit));
+  const lineGap = Math.max(0, Math.round(clampInt(style.lineGap, 0, 32, 8) * scale * unit));
   const showLabels = style.showLabels !== false;
+  const titleAlign = textAlign(style.titleAlign, 'left');
+  const stepAlign = textAlign(style.stepAlign, 'left');
+  function alignedX(textWidth, align) {
+    if (align === 'center') return pad + Math.round((contentWidth - textWidth) / 2);
+    if (align === 'right') return pad + Math.max(0, contentWidth - textWidth);
+    return pad;
+  }
   const stepsPerPage = clampInt(style.stepsPerPage, 1, 20, 1);
   const marks = {
     logo: await loadPdfImage(style.logo),
     watermark: await loadPdfImage(style.watermark),
   };
+  function drawPageLogo(ctx, pageWidth, bandHeight) {
+    const image = marks.logo;
+    const anchor = MARK_POSITIONS[style.logoPosition];
+    if (!image || !anchor || bandHeight < 8) return;
+    const margin = Math.round(pageWidth * 0.04);
+    const band = Math.max(8, bandHeight - u(12));
+    let boxHeight = band;
+    let boxWidth = Math.round(boxHeight * (image.width / image.height)) || 1;
+    const maxWidth = Math.round(pageWidth * (clampInt(style.logoSize, 8, 40, 16) / 100));
+    if (boxWidth > maxWidth) {
+      boxWidth = maxWidth;
+      boxHeight = Math.max(1, Math.round(boxWidth * (image.height / image.width)));
+    }
+    if (boxHeight > band) {
+      boxHeight = band;
+      boxWidth = Math.max(1, Math.round(boxHeight * (image.width / image.height)));
+    }
+    const x = margin + anchor[0] * (pageWidth - margin * 2 - boxWidth);
+    const y = Math.max(u(6), Math.round((bandHeight - boxHeight) / 2));
+    ctx.drawImage(image, x, y, boxWidth, boxHeight);
+  }
   function stampPage(ctx, pageWidth, pageHeight) {
     drawStoredMark(
       ctx,
@@ -754,46 +1022,71 @@ async function renderPdfPages(guide, style) {
       style.watermarkSize,
       style.watermarkOpacity,
     );
-    drawStoredMark(
-      ctx,
-      marks.logo,
-      pageWidth,
-      pageHeight,
-      style.logoPosition,
-      style.logoSize,
-      100,
-    );
+    drawPageLogo(ctx, pageWidth, Math.min(pad, pageHeight * 0.16));
   }
   const headGap = headSize + lineGap;
   const bodyGap = bodySize + lineGap;
+  const badge = Math.max(u(18), Math.round(headSize * 0.86));
+  const badgeGap = Math.round(badge * 0.4);
   const labelGap = labelSize + lineGap;
   const steps = guide.steps && guide.steps.length
     ? guide.steps
     : [{ text: '没有步骤', url: '', image: null }];
   const measure = document.createElement('canvas').getContext('2d');
+  measure.font = titleWeight + docSize + 'px ' + font;
+  const titleLines = wrapPdfText(measure, guide.title || '未命名流程', contentWidth);
+  measure.font = urlSize + 'px ' + font;
+  const timeSource = style.showRecordedAt ? recordedAtText(guide.startedAt) : '';
+  const timeLines = timeSource ? wrapPdfText(measure, timeSource, contentWidth) : [];
+  const urlLines = [];
+  if (style.showTitleUrls) {
+    involvedUrls(guide.steps).forEach((url) => {
+      wrapPdfText(measure, url, contentWidth).forEach((line) => {
+        urlLines.push(line);
+      },);
+    },);
+  }
   measure.font = noteWeight + bodySize + 'px ' + font;
   const intro = guide.description ? wrapPdfText(measure, guide.description, contentWidth) : [];
   const prepared = [];
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
     const image = await loadPdfImage(step.image);
+    const digits = String(index + 1);
+    measure.font = '600 ' + Math.round(badge * 0.52) + 'px ' + font;
+    const digitWidth = measure.measureText(digits).width;
+    const badgeWidth = Math.max(badge, Math.round(digitWidth + badge * 0.7));
+    const numberWidth = badgeWidth + badgeGap;
+    const cardPad = image ? u(16) : 0;
+    const colGap = image ? u(22) : 0;
+    const innerW = Math.max(1, contentWidth - cardPad * 2);
+    let left = image ? Math.round((innerW - colGap) * 0.42) : contentWidth;
+    let right = image ? innerW - colGap - left : 0;
+    if (image && left < numberWidth + u(48)) {
+      left = numberWidth + u(48);
+      right = Math.max(u(80), innerW - colGap - left);
+    }
+    const wrapWidth = Math.max(u(40), stepAlign === 'left' ? left - numberWidth : left);
     measure.font = stepWeight + headSize + 'px ' + font;
-    const numberLabel = String(index + 1) + '  ';
-    const numberWidth = measure.measureText(numberLabel).width;
-    const headingLines = wrapPdfText(measure, step.text || '', contentWidth - numberWidth);
+    const headingLines = wrapPdfText(measure, step.text || '', wrapWidth);
     measure.font = noteWeight + bodySize + 'px ' + font;
-    const notes = step.note ? wrapPdfText(measure, step.note, contentWidth) : [];
+    const notes = step.note ? wrapPdfText(measure, step.note, wrapWidth) : [];
     measure.font = urlSize + 'px ' + font;
-    const links = style.showStepUrl && step.url ? wrapPdfText(measure, step.url, contentWidth) : [];
+    const links = style.showStepUrl && step.url ? wrapPdfText(measure, step.url, wrapWidth) : [];
     const fullWidth = image
-      ? Math.max(80, Math.round(contentWidth * (imagePercent(style.image) / 100)))
+      ? Math.max(u(40), Math.round(right * (imagePercent(style.image) / 100)))
       : 0;
     const fullHeight = image ? Math.round(fullWidth * (image.height / image.width)) : 0;
     prepared.push({
       index,
       step,
       image,
+      badgeWidth,
       numberWidth,
+      cardPad,
+      colGap,
+      left,
+      right,
       headingLines,
       notes,
       links,
@@ -802,17 +1095,32 @@ async function renderPdfPages(guide, style) {
     });
   }
 
-  function textHeight(item) {
+  function copyHeight(item) {
     let height = Math.max(1, item.headingLines.length) * headGap;
     if (item.notes.length) {
-      height += (showLabels ? labelGap : 0) + item.notes.length * bodyGap;
+      height += u(10) + (showLabels ? labelGap : 0) + item.notes.length * bodyGap;
     }
     if (item.links.length) height += blockGap + item.links.length * (urlSize + lineGap);
+    return height;
+  }
+
+  function rowSpan(item, imageH) {
+    const copyH = copyHeight(item);
+    if (item.image && imageH > 0) return item.cardPad * 2 + Math.max(copyH, imageH);
+    if (!item.image) return copyH + u(36);
+    return copyH;
+  }
+
+  function metaHeight() {
+    if (!timeLines.length && !urlLines.length) return 0;
+    let height = timeLines.length * (urlSize + lineGap);
+    if (urlLines.length) height += labelGap + urlLines.length * (urlSize + lineGap);
     return height + blockGap;
   }
 
   function docHeight() {
-    let height = docSize + blockGap;
+    const titleBlock = titleLines.length * docSize + Math.max(0, titleLines.length - 1) * lineGap;
+    let height = titleBlock + blockGap + metaHeight();
     if (intro.length) {
       height += (showLabels ? labelGap : 0) + intro.length * bodyGap + blockGap;
     }
@@ -823,8 +1131,42 @@ async function renderPdfPages(guide, style) {
     ctx.textBaseline = 'top';
     ctx.fillStyle = style.titleColor;
     ctx.font = titleWeight + docSize + 'px ' + font;
-    ctx.fillText(guide.title || '未命名流程', pad, y);
-    y += docSize + blockGap;
+    titleLines.forEach((line, index) => {
+      ctx.fillText(line, alignedX(ctx.measureText(line).width, titleAlign), y);
+      y += docSize;
+      if (index < titleLines.length - 1) y += lineGap;
+    },);
+    const ruleGap = Math.round(blockGap * 0.4);
+    y += ruleGap;
+    ctx.save();
+    ctx.strokeStyle = style.muted;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = Math.max(1, Math.round(unit));
+    ctx.beginPath();
+    ctx.moveTo(pad, y);
+    ctx.lineTo(pad + contentWidth, y);
+    ctx.stroke();
+    ctx.restore();
+    y += blockGap - ruleGap;
+    if (timeLines.length || urlLines.length) {
+      ctx.fillStyle = style.muted;
+      ctx.font = urlSize + 'px ' + font;
+      timeLines.forEach((line) => {
+        ctx.fillText(line, alignedX(ctx.measureText(line).width, titleAlign), y);
+        y += urlSize + lineGap;
+      },);
+      if (urlLines.length) {
+        ctx.font = labelSize + 'px ' + font;
+        ctx.fillText('涉及网址', alignedX(ctx.measureText('涉及网址').width, titleAlign), y);
+        y += labelGap;
+        ctx.font = urlSize + 'px ' + font;
+        urlLines.forEach((line) => {
+          ctx.fillText(line, alignedX(ctx.measureText(line).width, titleAlign), y);
+          y += urlSize + lineGap;
+        },);
+      }
+      y += blockGap;
+    }
     if (!intro.length) return y;
     if (showLabels) {
       ctx.fillStyle = style.muted;
@@ -841,90 +1183,186 @@ async function renderPdfPages(guide, style) {
     return y + blockGap;
   }
 
-  function drawStep(ctx, item, imageWidth, imageHeight, y) {
-    ctx.textBaseline = 'top';
+  function alignedIn(textWidth, align, origin, columnWidth) {
+    if (align === 'center') return origin + Math.round((columnWidth - textWidth) / 2);
+    if (align === 'right') return origin + Math.max(0, columnWidth - textWidth);
+    return origin;
+  }
+
+  function drawStepBadge(ctx, n, x, y, badgeWidth) {
+    ctx.save();
     ctx.fillStyle = style.accent;
-    ctx.font = stepWeight + headSize + 'px ' + font;
-    ctx.fillText(String(item.index + 1), pad, y);
-    ctx.fillStyle = stepColor;
+    ctx.beginPath();
+    ctx.roundRect(x, y + Math.round((headSize - badge) / 2), badgeWidth, badge, badge / 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '600 ' + Math.round(badge * 0.52) + 'px ' + font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(n), x + badgeWidth / 2, y + headSize / 2);
+    ctx.restore();
+  }
+
+  function drawFramedShot(ctx, image, x, y, w, h) {
+    const radius = Math.max(u(6), Math.round(Math.min(w, h) * 0.012));
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.clip();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(image, x, y, w, h);
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.strokeStyle = style.muted;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = Math.max(1, Math.round(unit));
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawStepCard(ctx, x, y, w, h) {
+    const radius = u(14);
+    ctx.save();
+    ctx.shadowColor = 'rgba(36, 27, 74, 0.10)';
+    ctx.shadowBlur = u(12);
+    ctx.shadowOffsetY = u(6);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.strokeStyle = style.accent;
+    ctx.globalAlpha = 0.14;
+    ctx.lineWidth = Math.max(1, Math.round(unit));
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawStep(ctx, item, imageWidth, imageHeight, y) {
+    const copyH = copyHeight(item);
+    const hasShot = Boolean(item.image && imageHeight > 0);
+    const innerH = hasShot ? Math.max(copyH, imageHeight) : copyH;
+    const cardH = hasShot ? item.cardPad * 2 + innerH : 0;
+    if (hasShot) drawStepCard(ctx, pad, y, contentWidth, cardH);
+    const origin = pad + (hasShot ? item.cardPad : 0);
+    const column = hasShot ? item.left : contentWidth;
+    const innerTop = y + (hasShot ? item.cardPad : 0);
+    let cursor = innerTop;
+    ctx.textBaseline = 'top';
     ctx.font = stepWeight + headSize + 'px ' + font;
     const headingText = item.headingLines.length ? item.headingLines : [''];
     headingText.forEach((line, lineIndex) => {
-      ctx.fillText(line, pad + (lineIndex === 0 ? item.numberWidth : 0), y);
-      y += headGap;
+      const lineWidth = ctx.measureText(line).width;
+      if (lineIndex === 0) {
+        const x = alignedIn(item.numberWidth + lineWidth, stepAlign, origin, column);
+        drawStepBadge(ctx, item.index + 1, x, cursor, item.badgeWidth);
+        ctx.fillStyle = stepColor;
+        ctx.font = stepWeight + headSize + 'px ' + font;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(line, x + item.numberWidth, cursor);
+      } else {
+        const x = stepAlign === 'left'
+          ? origin + item.numberWidth
+          : alignedIn(lineWidth, stepAlign, origin, column);
+        ctx.fillStyle = stepColor;
+        ctx.fillText(line, x, cursor);
+      }
+      cursor += headGap;
     },);
+    const bodyX = stepAlign === 'left' ? origin + item.numberWidth : origin;
     if (item.notes.length) {
+      cursor += u(10);
       if (showLabels) {
         ctx.fillStyle = style.muted;
         ctx.font = labelSize + 'px ' + font;
-        ctx.fillText('说明', pad, y);
-        y += labelGap;
+        ctx.fillText('说明', bodyX, cursor);
+        cursor += labelGap;
       }
       ctx.fillStyle = style.noteColor;
       ctx.font = noteWeight + bodySize + 'px ' + font;
       item.notes.forEach((line) => {
-        ctx.fillText(line, pad, y);
-        y += bodyGap;
+        ctx.fillText(line, bodyX, cursor);
+        cursor += bodyGap;
       },);
     }
     if (item.links.length) {
-      y += blockGap;
+      cursor += blockGap;
       ctx.fillStyle = style.muted;
       ctx.font = urlSize + 'px ' + font;
       item.links.forEach((line) => {
-        ctx.fillText(line, pad, y);
-        y += urlSize + lineGap;
+        ctx.fillText(line, bodyX, cursor);
+        cursor += urlSize + lineGap;
       },);
     }
-    y += blockGap;
-    if (item.image && imageHeight > 0) {
-      const imageX = pad + Math.round((contentWidth - imageWidth) / 2);
-      ctx.drawImage(item.image, imageX, y, imageWidth, imageHeight);
-      return y + imageHeight;
+    if (hasShot) {
+      const imageX = origin + item.left + item.colGap + Math.round((item.right - imageWidth) / 2);
+      drawFramedShot(ctx, item.image, imageX, innerTop, imageWidth, imageHeight);
+      return y + cardH;
     }
     if (!item.image) {
       ctx.fillStyle = style.accent;
       ctx.font = urlSize + 'px ' + font;
-      ctx.fillText(item.step.shotError || '这一步没有截到画面。', pad, y);
-      return y + 36;
+      ctx.fillText(item.step.shotError || '这一步没有截到画面。', origin, cursor + u(8));
+      return y + copyH + u(36);
     }
-    return y;
+    return y + copyH;
   }
 
   function fitBox(item, maxHeight) {
     if (!item.image || maxHeight <= 0) return { w: 0, h: 0 };
     let boxWidth = item.fullWidth;
     let boxHeight = item.fullHeight;
-    if (boxHeight > maxHeight) {
-      boxWidth = Math.max(1, Math.round(boxWidth * (maxHeight / boxHeight)));
-      boxHeight = maxHeight;
+    const pleasant = Math.round(item.fullWidth * 0.72);
+    const limit = Math.min(maxHeight, pleasant);
+    if (boxHeight > limit) {
+      boxWidth = Math.max(1, Math.round(boxWidth * (limit / boxHeight)));
+      boxHeight = limit;
+    }
+    if (item.right && boxWidth > item.right) {
+      boxHeight = Math.max(1, Math.round(boxHeight * (item.right / boxWidth)));
+      boxWidth = item.right;
     }
     return { w: boxWidth, h: boxHeight };
   }
 
   function fittedBoxes(chunk, includeDoc) {
-    const inner = sheet.height - pad * 2;
-    let used = includeDoc ? docHeight() : 0;
-    chunk.forEach((item, index) => {
-      if (index) used += blockGap;
-      used += textHeight(item);
-      if (!item.image) used += 36;
+    const inner = sheet.height - pad * 2 - (includeDoc ? docHeight() : 0);
+    const room = inner - blockGap * Math.max(0, chunk.length - 1);
+    let boxes = chunk.map((item) => {
+      if (!item.image) return { w: 0, h: 0 };
+      return { w: item.fullWidth, h: item.fullHeight };
     },);
-    const room = inner - used;
-    if (room < 0) return null;
-    const imageCount = chunk.filter((item) => item.image).length;
-    const share = imageCount ? Math.floor(room / imageCount) : 0;
-    return chunk.map((item) => fitBox(item, share));
+    function total() {
+      return chunk.reduce((sum, item, index) => sum + rowSpan(item, boxes[index].h), 0);
+    }
+    let guard = 8;
+    while (total() > room && guard > 0) {
+      guard -= 1;
+      const heights = boxes.reduce((sum, box) => sum + box.h, 0);
+      if (heights <= 0) return null;
+      const scale = Math.max(0.45, (heights - (total() - room)) / heights);
+      boxes = chunk.map((item, index) => {
+        return fitBox(item, Math.max(1, Math.floor(boxes[index].h * scale)));
+      },);
+    }
+    if (total() > room) return null;
+    return boxes;
   }
 
-  const pages = [];
+  const sheets = [];
   async function emit(chunk, includeDoc, boxes, fitPage) {
     let contentHeight = pad;
     if (includeDoc) contentHeight += docHeight();
     chunk.forEach((item, index) => {
       if (index) contentHeight += blockGap;
-      contentHeight += textHeight(item);
-      contentHeight += item.image ? boxes[index].h : 36;
+      contentHeight += rowSpan(item, boxes[index].h);
     },);
     contentHeight += pad;
     const canvas = document.createElement('canvas');
@@ -941,27 +1379,20 @@ async function renderPdfPages(guide, style) {
     },);
     if (fitPage) {
       stampPage(ctx, canvas.width, canvas.height);
-      pages.push({
-        bytes: await canvasToJpeg(canvas),
-        width: canvas.width,
-        height: canvas.height,
-        pageWidth: Math.round(sheet.pageWidth),
-        pageHeight: Math.round(sheet.pageHeight),
-      },);
+      sheets.push({ canvas, contentBottom: y });
       return;
     }
-    await pushPaperPages(pages, canvas, sheet, style.paper, stampPage);
+    pushPaperPages(sheets, canvas, sheet, style.paper, stampPage, footerBand, pad);
   }
 
   async function emitScaled(chunk, includeDoc) {
-    const boxes = chunk.map((item) => fitBox(item, 160));
+    const boxes = chunk.map((item) => fitBox(item, u(160)));
     const source = document.createElement('canvas');
     let contentHeight = pad;
     if (includeDoc) contentHeight += docHeight();
     chunk.forEach((item, index) => {
       if (index) contentHeight += blockGap;
-      contentHeight += textHeight(item);
-      contentHeight += item.image ? boxes[index].h : 36;
+      contentHeight += rowSpan(item, boxes[index].h);
     },);
     contentHeight += pad;
     source.width = width;
@@ -985,23 +1416,24 @@ async function renderPdfPages(guide, style) {
     const drawW = Math.max(1, Math.round(source.width * scale));
     const drawH = Math.max(1, Math.round(source.height * scale));
     const x = Math.round((width - drawW) / 2);
+    pageCtx.imageSmoothingEnabled = true;
+    pageCtx.imageSmoothingQuality = 'high';
     pageCtx.drawImage(source, x, 0, drawW, drawH);
     stampPage(pageCtx, page.width, page.height);
-    pages.push({
-      bytes: await canvasToJpeg(page),
-      width: page.width,
-      height: page.height,
-      pageWidth: Math.round(sheet.pageWidth),
-      pageHeight: Math.round(sheet.pageHeight),
-    },);
+    sheets.push({ canvas: page, contentBottom: drawH });
   }
 
   for (let start = 0; start < prepared.length; start += stepsPerPage) {
     const chunk = prepared.slice(start, start + stepsPerPage);
     const includeDoc = start === 0;
     if (stepsPerPage === 1) {
-      const full = chunk.map((item) => ({ w: item.fullWidth, h: item.fullHeight }));
-      await emit(chunk, includeDoc, full, false);
+      const inner = sheet.height - pad * 2 - (includeDoc ? docHeight() : 0);
+      const boxes = chunk.map((item) => {
+        if (!item.image) return { w: 0, h: 0 };
+        return fitBox(item, Math.max(u(80), inner - item.cardPad * 2));
+      },);
+      const fits = rowSpan(chunk[0], boxes[0].h) <= inner;
+      await emit(chunk, includeDoc, boxes, fits);
     } else {
       const boxes = fittedBoxes(chunk, includeDoc);
       if (boxes) {
@@ -1010,6 +1442,91 @@ async function renderPdfPages(guide, style) {
         await emitScaled(chunk, includeDoc);
       }
     }
+  }
+
+  function signLines() {
+    const text = String(style.signOff || '').trim();
+    if (!text) return [];
+    const measureCtx = document.createElement('canvas').getContext('2d');
+    measureCtx.font = noteWeight + bodySize + 'px ' + font;
+    const lines = [];
+    text.split('\n').forEach((part) => {
+      wrapPdfText(measureCtx, part, Math.round(contentWidth * 0.72)).forEach((line) => {
+        lines.push(line);
+      },);
+    },);
+    return lines;
+  }
+
+  function paintSign(ctx, top, lines) {
+    ctx.save();
+    ctx.fillStyle = style.ink;
+    ctx.font = noteWeight + bodySize + 'px ' + font;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    let cursor = top;
+    lines.forEach((line) => {
+      if (line) ctx.fillText(line, sheet.width - pad, cursor);
+      cursor += bodyGap;
+    },);
+    ctx.restore();
+    return cursor;
+  }
+
+  const closing = signLines();
+  if (closing.length && sheets.length) {
+    const needed = closing.length * bodyGap + u(8);
+    const last = sheets[sheets.length - 1];
+    const footerTop = sheet.height - footerBand;
+    if (last.contentBottom + u(18) + needed <= footerTop - u(8)) {
+      paintSign(last.canvas.getContext('2d'), last.contentBottom + u(18), closing);
+    } else {
+      const extra = document.createElement('canvas');
+      extra.width = sheet.width;
+      extra.height = sheet.height;
+      const extraCtx = extra.getContext('2d');
+      extraCtx.fillStyle = style.paper;
+      extraCtx.fillRect(0, 0, extra.width, extra.height);
+      stampPage(extraCtx, extra.width, extra.height);
+      const bottom = paintSign(extraCtx, pad, closing);
+      sheets.push({ canvas: extra, contentBottom: bottom });
+    }
+  }
+
+  function drawPageFooter(ctx, index, total) {
+    const lineY = sheet.height - footerBand;
+    ctx.save();
+    ctx.strokeStyle = style.muted;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = Math.max(1, Math.round(unit));
+    ctx.beginPath();
+    ctx.moveTo(pad, lineY);
+    ctx.lineTo(sheet.width - pad, lineY);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = style.muted;
+    ctx.font = u(13) + 'px ' + font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText((index + 1) + ' / ' + total, sheet.width / 2, lineY + footerBand / 2);
+    ctx.restore();
+  }
+
+  const pages = [];
+  for (let index = 0; index < sheets.length; index += 1) {
+    const item = sheets[index];
+    drawPageFooter(item.canvas.getContext('2d'), index, sheets.length);
+    const image = await canvasToPdfImage(item.canvas);
+    pages.push({
+      bytes: image.bytes,
+      preview: image.preview,
+      width: item.canvas.width,
+      height: item.canvas.height,
+      pageWidth: Math.round(sheet.pageWidth),
+      pageHeight: Math.round(sheet.pageHeight),
+    },);
+    item.canvas.width = 0;
+    item.canvas.height = 0;
   }
   return pages;
 }
@@ -1034,7 +1551,7 @@ document.getElementById('pdf').addEventListener('click', async () => {
 document.getElementById('html').addEventListener('click', () => {
   if (!guide) return;
   const name = (guide.title || 'sop').replace(/[\\/:*?"<>|]/g, '-') + '.html';
-  downloadText(name, toHtml(guide), 'text/html');
+  downloadText(name, toHtml(guide, readPdfStyle()), 'text/html');
 },);
 
 function sleep(ms) {
@@ -1056,6 +1573,16 @@ function videoPx(width, value) {
   return Math.max(1, Math.round((value * width) / 1280));
 }
 
+function drawFullShot(ctx, image, destX, destY, destW, destH) {
+  const scale = Math.min(destW / image.width, destH / image.height);
+  const drawWidth = Math.max(1, Math.round(image.width * scale));
+  const drawHeight = Math.max(1, Math.round(image.height * scale));
+  const x = destX + Math.round((destW - drawWidth) / 2);
+  const y = destY + Math.round((destH - drawHeight) / 2);
+  ctx.drawImage(image, 0, 0, image.width, image.height, x, y, drawWidth, drawHeight);
+  return { x, y, drawWidth, drawHeight };
+}
+
 function paintVideoSlide(ctx, slide) {
   const width = ctx.canvas.width;
   const height = ctx.canvas.height;
@@ -1063,63 +1590,68 @@ function paintVideoSlide(ctx, slide) {
   const font = 'PingFang SC, Noto Sans SC, sans-serif';
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.fillStyle = '#f7f4ee';
+  ctx.fillStyle = '#f3f1fb';
   ctx.fillRect(0, 0, width, height);
   ctx.textBaseline = 'top';
   let y = pad;
-  ctx.font = '600 ' + videoPx(width, 52) + 'px ' + font;
-  ctx.fillStyle = '#1c1915';
-  wrapPdfText(ctx, slide.headline, width - pad * 2).slice(0, 2).forEach((line) => {
-    ctx.fillText(line, pad, y);
-    y += videoPx(width, 64);
-  },);
-  y += videoPx(width, 8);
+  if (slide.headline) {
+    ctx.font = '600 ' + videoPx(width, 52) + 'px ' + font;
+    ctx.fillStyle = '#241b4a';
+    wrapPdfText(ctx, slide.headline, width - pad * 2).slice(0, 2).forEach((line) => {
+      ctx.fillText(line, pad, y);
+      y += videoPx(width, 64);
+    },);
+    y += videoPx(width, 16);
+  }
+  const split = Boolean(slide.image && slide.label);
+  const gap = videoPx(width, 40);
+  const textWidth = split ? Math.round((width - pad * 2 - gap) * 0.32) : width - pad * 2;
+  const contentTop = y;
   if (slide.label) {
     ctx.font = '600 ' + videoPx(width, 32) + 'px ' + font;
-    ctx.fillStyle = '#c2410c';
+    ctx.fillStyle = '#5b46f5';
     ctx.fillText(slide.label, pad, y);
     const numberWidth = ctx.measureText(slide.label + '  ').width;
-    ctx.fillStyle = '#1c1915';
-    const titleWidth = width - pad * 2 - numberWidth;
+    ctx.fillStyle = '#241b4a';
+    const titleWidth = Math.max(videoPx(width, 80), textWidth - numberWidth);
     const titleLines = wrapPdfText(ctx, slide.title, titleWidth);
-    const shown = titleLines.length ? titleLines : [''];
+    const shown = titleLines.length ? titleLines.slice(0, 4) : [''];
     shown.forEach((line, lineIndex) => {
       const x = lineIndex === 0 ? pad + numberWidth : pad;
       ctx.fillText(line, x, y);
       y += videoPx(width, 42);
     },);
-    y += videoPx(width, 8);
+    y += videoPx(width, 12);
   }
   if (slide.body) {
     ctx.font = videoPx(width, 28) + 'px ' + font;
-    ctx.fillStyle = '#1c1915';
-    const maxLines = slide.image ? 3 : 8;
-    wrapPdfText(ctx, slide.body, width - pad * 2).slice(0, maxLines).forEach((line) => {
+    ctx.fillStyle = '#241b4a';
+    const maxLines = split ? 12 : 8;
+    wrapPdfText(ctx, slide.body, textWidth).slice(0, maxLines).forEach((line) => {
       ctx.fillText(line, pad, y);
       y += videoPx(width, 38);
     },);
   }
-  y += videoPx(width, 20);
-  const room = height - pad - y;
-  if (slide.image && room > videoPx(width, 40)) {
-    const maxWidth = width - pad * 2;
-    const scale = Math.min(maxWidth / slide.image.width, room / slide.image.height, 1);
-    const drawWidth = Math.max(1, Math.round(slide.image.width * scale));
-    const drawHeight = Math.max(1, Math.round(slide.image.height * scale));
-    const x = pad + Math.round((maxWidth - drawWidth) / 2);
-    ctx.drawImage(slide.image, x, y, drawWidth, drawHeight);
+  if (slide.image) {
+    const imageX = split ? pad + textWidth + gap : pad;
+    const imageWidth = width - pad - imageX;
+    const room = height - pad - contentTop;
+    if (room > videoPx(width, 40)) {
+      drawFullShot(ctx, slide.image, imageX, contentTop, imageWidth, room);
+    }
     return;
   }
-  if (slide.label && !slide.image) {
-    ctx.fillStyle = '#c2410c';
+  if (slide.label) {
+    ctx.fillStyle = '#5b46f5';
     ctx.font = videoPx(width, 24) + 'px ' + font;
-    ctx.fillText('这一步没有截到画面。', pad, y);
+    ctx.fillText('这一步没有截到画面。', pad, y + videoPx(width, 12));
   }
 }
 
 async function buildStepVideo(guide, onProgress) {
   const steps = guide.steps || [];
-  const headline = guide.title || '未命名流程';
+  const rawTitle = String(guide.title || '').trim();
+  const headline = rawTitle && rawTitle !== '未命名流程' ? rawTitle : '';
   const slides = [{
     headline,
     label: '',
@@ -1138,6 +1670,8 @@ async function buildStepVideo(guide, onProgress) {
       title: step.text || '',
       body: step.note || '',
       image,
+      focusX: step.xPct,
+      focusY: step.yPct,
       ms: 2600 + extra,
     },);
   }
@@ -1247,7 +1781,7 @@ async function openPdfPreview() {
     const pages = await renderPdfPages(guide, readPdfStyle());
     previewPages = pages;
     previewUrls = pages.map((page) => {
-      return URL.createObjectURL(new Blob([page.bytes], { type: 'image/jpeg' }));
+      return URL.createObjectURL(page.preview);
     },);
     previewIndex = 0;
     showPreviewPage();
@@ -1292,9 +1826,42 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 },);
 
+function pageTitleOf(tab) {
+  if (!tab || !tab.url || !/^https?:/i.test(tab.url)) return '';
+  return String(tab.title || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+async function fillSopTitle() {
+  let pageTitle = '';
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    pageTitle = pageTitleOf(tab);
+  } catch (error) {
+    pageTitle = '';
+  }
+  if (!pageTitle || !guide) return;
+  if (String(guide.customTitle || '').trim()) return;
+  if (guide.steps && guide.steps.length && guide.pageTitle) return;
+  const input = document.getElementById('title');
+  if (input && document.activeElement !== input) input.value = pageTitle;
+  const response = await ask({ type: 'SET_PAGE_TITLE', title: pageTitle });
+  if (response && response.guide) {
+    guide = response.guide;
+    render();
+  }
+}
+
 ask({ type: 'GET_STATE' }).then((response) => {
   guide = response && response.guide;
   render();
+  fillSopTitle();
+},);
+
+chrome.tabs.onActivated.addListener(() => {
+  fillSopTitle();
+},);
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.title) fillSopTitle();
 },);
 
 document.getElementById('pdf-steps').addEventListener('input', () => {
@@ -1352,10 +1919,11 @@ document.getElementById('pdf-logo-file').addEventListener('change', async (event
   if (!file) return;
   try {
     pdfMarkData.logo = await readMarkFile(file);
+    pdfMarkData.logoMode = 'custom';
     paintMarkState();
     savePdfStyle();
   } catch (error) {
-    document.getElementById('status').textContent = '商标没有读出来。请换一张 8MB 以内的图片。';
+    document.getElementById('status').textContent = '商标没有读出来。请换一张 8MB 以内的 PNG、JPG 或 SVG。';
   }
 },);
 document.getElementById('pdf-watermark-file').addEventListener('change', async (event) => {
@@ -1371,6 +1939,7 @@ document.getElementById('pdf-watermark-file').addEventListener('change', async (
 },);
 document.getElementById('pdf-logo-clear').addEventListener('click', () => {
   pdfMarkData.logo = '';
+  pdfMarkData.logoMode = 'none';
   document.getElementById('pdf-logo-file').value = '';
   paintMarkState();
   savePdfStyle();
