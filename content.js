@@ -2,7 +2,7 @@ if (!globalThis.__sopRecorderInstalled) {
   globalThis.__sopRecorderInstalled = true;
 
   let recording = false;
-  let lastEmit = 0;
+  let lastClickAt = 0;
   let focused = null;
 
   function clean(value) {
@@ -34,8 +34,10 @@ if (!globalThis.__sopRecorderInstalled) {
 
   function send(event) {
     const now = Date.now();
-    if (now - lastEmit < 280 && event.kind === 'click') return;
-    lastEmit = now;
+    if (event.kind === 'click') {
+      if (now - lastClickAt < 280) return;
+      lastClickAt = now;
+    }
     event.pageTitle = document.title;
     event.url = location.href;
     event.text = describeStep(event);
@@ -95,6 +97,7 @@ if (!globalThis.__sopRecorderInstalled) {
       if (target.matches("input[type='checkbox'], input[type='radio']")) return;
       const labelWrap = target.closest('label');
       if (labelWrap && labelWrap.querySelector("input[type='checkbox'], input[type='radio']")) return;
+      flushField(false);
       const point = pointOf(target, event.clientX, event.clientY);
       send({
         kind: 'click',
