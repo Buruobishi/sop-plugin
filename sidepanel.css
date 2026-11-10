@@ -1,5 +1,4 @@
 :root {
-  color-scheme: light;
   --ink: #241b4a;
   --muted: #6d678c;
   --line: #ddd7f0;
@@ -24,13 +23,15 @@
   --gap: 8px;
   --step-gap: 12px;
   --radius: 14px;
+  color-scheme: light;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   height: 100%;
 }
 
@@ -53,8 +54,8 @@ body {
 
 #panel-shell {
   display: flex;
-  flex-direction: column;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
   background: var(--paper-fill);
 }
@@ -83,12 +84,16 @@ header {
   margin-bottom: 2px;
 }
 
-#title, #description, textarea, button {
-  font: inherit;
+#title,
+#description,
+textarea,
+button {
   color: inherit;
+  font: inherit;
 }
 
-#title, #description {
+#title,
+#description {
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -104,43 +109,45 @@ header {
 }
 
 textarea.step-title {
-  field-sizing: content;
   min-height: 0;
-  overflow: hidden;
-  resize: none;
   padding: 2px 0 4px;
+  overflow: hidden;
   color: var(--step-title-color);
   font-size: var(--step-title-size);
   font-weight: var(--step-title-weight);
   line-height: 1.3;
+  resize: none;
+  field-sizing: content;
 }
 
-#description, textarea.step-note {
-  field-sizing: content;
+#description,
+textarea.step-note {
   min-height: calc(var(--note-size) * 2.6);
   max-height: 7.5em;
-  overflow: auto;
-  resize: vertical;
   margin-top: 0;
   padding: 2px 0 4px;
+  overflow: auto;
   color: var(--note-color);
   font-size: var(--note-size);
   font-weight: var(--note-weight);
   line-height: 1.45;
+  resize: vertical;
+  field-sizing: content;
 }
 
-#title:focus, #description:focus {
-  outline: none;
+#title:focus,
+#description:focus {
   border-bottom-color: var(--ink);
+  outline: none;
 }
 
 #toggle {
   width: 100%;
+  padding: 10px 12px;
   border: 0;
   border-radius: 999px;
   background: var(--accent);
   color: #ffffff;
-  padding: 10px 12px;
   font-weight: 650;
   cursor: pointer;
 }
@@ -157,7 +164,8 @@ textarea.step-title {
   line-height: 1.35;
 }
 
-.row, .exports {
+.row,
+.exports {
   gap: var(--gap);
 }
 
@@ -207,13 +215,13 @@ textarea.step-title {
 }
 
 footer {
-  flex: none;
   display: flex;
+  flex: none;
   flex-direction: column;
   gap: 6px;
   padding: 8px var(--pad-x) 10px;
-  background: var(--paper-fill);
   border-top: 1px solid var(--line);
+  background: var(--paper-fill);
 }
 
 .page-steps {
@@ -226,12 +234,12 @@ footer {
 
 .page-steps input {
   width: 4.5em;
-  font: inherit;
-  color: var(--ink);
-  border: 1px solid var(--line);
-  background: var(--surface-fill);
-  border-radius: 6px;
   padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-fill);
+  color: var(--ink);
+  font: inherit;
 }
 
 .styles {
@@ -247,15 +255,15 @@ footer {
 }
 
 .pdf-style summary {
-  cursor: pointer;
   color: var(--ink);
   font-weight: 600;
+  cursor: pointer;
 }
 
 .pdf-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 8px;
+  grid-template-columns: 1fr 1fr;
   margin-top: 8px;
 }
 
@@ -269,11 +277,11 @@ footer {
 
 .pdf-grid select,
 .pdf-grid input[type="color"] {
-  font: inherit;
-  color: var(--ink);
   border: 1px solid var(--line);
-  background: var(--surface-fill);
   border-radius: 6px;
+  background: var(--surface-fill);
+  color: var(--ink);
+  font: inherit;
 }
 
 .pdf-grid input[type="color"] {
@@ -316,26 +324,26 @@ footer {
 }
 
 .pdf-sign {
-  align-items: stretch;
   flex-direction: column;
+  align-items: stretch;
 }
 
 .pdf-sign textarea {
   width: 100%;
   min-height: 4.5em;
+  padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-fill);
-  padding: 6px 8px;
 }
 
 .pdf-file {
   position: relative;
   display: inline-flex;
   align-items: center;
+  padding: 4px 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 4px 8px;
   background: var(--surface-fill);
   cursor: pointer;
 }
@@ -369,8 +377,8 @@ footer {
 }
 
 .pdf-preview-bar {
-  flex: none;
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
@@ -385,8 +393,8 @@ footer {
 .pdf-preview-stage {
   flex: 1;
   min-height: 0;
-  overflow: auto;
   padding: 0 8px 12px;
+  overflow: auto;
 }
 
 .pdf-preview-stage img {
@@ -397,11 +405,11 @@ footer {
 }
 
 button {
+  padding: 7px 8px;
   border: 1px solid var(--line);
+  border-radius: 999px;
   background: var(--surface-fill);
   color: var(--ink);
-  border-radius: 999px;
-  padding: 7px 8px;
   cursor: pointer;
 }
 
@@ -410,16 +418,16 @@ button:hover {
 }
 
 #steps {
-  list-style: none;
   margin: var(--gap) 0 0;
   padding: var(--gap) var(--pad-x);
+  list-style: none;
 }
 
 .step {
   display: grid;
-  grid-template-columns: 22px 1fr;
-  gap: 6px var(--gap);
   align-items: start;
+  gap: 6px var(--gap);
+  grid-template-columns: 22px 1fr;
   margin: 0 0 8px;
   padding: 8px 8px 10px;
   border: 1px solid var(--line);
@@ -448,9 +456,9 @@ button:hover {
 .shot {
   position: relative;
   margin-top: 8px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  overflow: hidden;
   background: var(--surface-fill);
 }
 
@@ -458,6 +466,7 @@ button:hover {
   display: block;
   width: 100%;
   height: auto;
+  cursor: pointer;
 }
 
 .missing {
@@ -476,16 +485,16 @@ button:hover {
 
 textarea {
   width: 100%;
-  resize: vertical;
+  padding: 2px 4px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  padding: 2px 4px;
+  resize: vertical;
 }
 
 textarea:focus {
-  outline: none;
   border-color: var(--line);
+  outline: none;
   background: var(--surface-fill);
 }
 
@@ -509,6 +518,6 @@ textarea:focus {
 }
 
 .empty {
-  color: var(--muted);
   padding: 8px 0 20px;
+  color: var(--muted);
 }

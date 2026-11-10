@@ -102,6 +102,7 @@ if (!globalThis.__sopRecorderInstalled) {
       send({
         kind: 'click',
         label: labelOf(target),
+        actedAt: Date.now(),
         xPct: point.xPct,
         yPct: point.yPct,
       },);
@@ -118,6 +119,8 @@ if (!globalThis.__sopRecorderInstalled) {
       focused = {
         el: target,
         value: target.value,
+        pending: null,
+        actedAt: 0,
         label: fieldLabel(target),
         sensitive: target.type === 'password' || target.autocomplete === 'current-password',
         xPct: point.xPct,
@@ -128,9 +131,19 @@ if (!globalThis.__sopRecorderInstalled) {
     true,
   );
 
+  document.addEventListener(
+    'input',
+    (event) => {
+      if (!recording || !focused || event.target !== focused.el) return;
+      focused.pending = focused.el.value;
+      focused.actedAt = Date.now();
+    },
+    true,
+  );
+
   function flushField(submit) {
     if (!recording || !focused || !focused.el) return;
-    const current = focused.el.value;
+    const current = focused.pending == null ? focused.el.value : focused.pending;
     const changed = current !== focused.value;
     if (changed || submit) {
       const point = pointOf(focused.el);
@@ -139,6 +152,7 @@ if (!globalThis.__sopRecorderInstalled) {
         label: focused.label,
         value: focused.sensitive ? '' : current,
         sensitive: focused.sensitive,
+        actedAt: focused.actedAt || Date.now(),
         xPct: point.xPct == null ? focused.xPct : point.xPct,
         yPct: point.yPct == null ? focused.yPct : point.yPct,
         box: boxOf(focused.el) || focused.box || null,

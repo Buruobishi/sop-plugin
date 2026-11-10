@@ -52,9 +52,9 @@ h1 {
 
 .step {
   display: grid;
-  grid-template-columns: minmax(200px, 0.42fr) minmax(0, 0.58fr);
-  gap: 18px;
   align-items: start;
+  gap: 18px;
+  grid-template-columns: minmax(200px, 0.42fr) minmax(0, 0.58fr);
   margin: 0 0 18px;
   padding: 18px;
   border: 1px solid rgba(91, 70, 245, 0.16);
@@ -65,8 +65,8 @@ h1 {
 
 .step h2 {
   display: flex;
-  gap: 10px;
   align-items: flex-start;
+  gap: 10px;
   margin: 0 0 8px;
   font: 600 20px/1.4 "PingFang SC", sans-serif;
 }
@@ -78,9 +78,9 @@ h1 {
   border-radius: 999px;
   background: #5b46f5;
   color: #ffffff;
-  text-align: center;
-  line-height: 1.7em;
   font-size: 13px;
+  line-height: 1.7em;
+  text-align: center;
 }
 
 .note {
@@ -93,9 +93,9 @@ h1 {
 }
 
 .shot {
+  overflow: hidden;
   border: 1px solid rgba(109, 103, 140, 0.28);
   border-radius: 12px;
-  overflow: hidden;
   background: #ffffff;
 }
 

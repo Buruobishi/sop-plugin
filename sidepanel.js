@@ -77,6 +77,10 @@ function render() {
       const img = document.createElement('img');
       img.src = step.image;
       img.alt = '步骤截图，橙色圆点是点击位置';
+      img.title = '点击涂抹马赛克';
+      img.addEventListener('click', () => {
+        openShotEditor(step.id);
+      },);
       shot.appendChild(img);
     } else {
       const missing = document.createElement('p');
@@ -159,6 +163,33 @@ document.getElementById('note').addEventListener('click', () => {
   const text = window.prompt('补充说明', '注意：');
   if (text) ask({ type: 'ADD_NOTE', text });
 },);
+
+document.getElementById('privacy').addEventListener('click', async () => {
+  const status = document.getElementById('status');
+  status.textContent = '正在给截图打马赛克…';
+  const response = await ask({ type: 'REDACT_ALL' });
+  if (response && response.guide) {
+    guide = response.guide;
+    render();
+    document.getElementById('status').textContent = '已把各步骤截图里的输入内容打上马赛克。';
+    return;
+  }
+  status.textContent = '没有打上马赛克，请再试一次。';
+},);
+
+function openShotEditor(id) {
+  const width = Math.max(960, Math.min(1600, Math.round(screen.availWidth * 0.86)));
+  const height = Math.max(680, Math.min(1100, Math.round(screen.availHeight * 0.86)));
+  chrome.windows.create({
+    url: chrome.runtime.getURL('shot-editor.html?id=' + encodeURIComponent(id)),
+    type: 'popup',
+    width,
+    height,
+    left: Math.max(0, Math.round((screen.availWidth - width) / 2)),
+    top: Math.max(0, Math.round((screen.availHeight - height) / 2)),
+    focused: true,
+  },);
+}
 
 document.getElementById('clear').addEventListener('click', async () => {
   if (!window.confirm('清空当前全部步骤？')) return;
@@ -1816,10 +1847,50 @@ document.getElementById('pdf-preview-download').addEventListener('click', () => 
   downloadBlob(safeFileName(guide.title) + '.pdf', file);
 },);
 
+let shotSeen = 0;
+
+function showSavedShot(next) {
+  if (!next || (next.shotRev || 0) < shotSeen) return;
+  shotSeen = next.shotRev || shotSeen;
+  guide = next;
+  render();
+  document.getElementById('status').textContent = '这张截图的马赛克已保存。';
+}
+
+function reloadSavedShot() {
+  return loadGuide().then(showSavedShot);
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.shotEditSaved) return;
+  reloadSavedShot().catch(() => {
+    /* 忽略失败 */
+  });
+},);
+
+const shotChannel = new BroadcastChannel('sop-guide');
+shotChannel.onmessage = (event) => {
+  const data = event.data || {};
+  if (data.type === 'shot-saved') {
+    reloadSavedShot().then(() => {
+      shotChannel.postMessage({ type: 'shot-applied', id: data.id });
+    },).catch(() => {
+      /* 忽略失败 */
+    });
+  }
+};
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'GUIDE') {
+    if (!message.guide || (message.guide.shotRev || 0) < shotSeen) return;
+    shotSeen = message.guide.shotRev || shotSeen;
     guide = message.guide;
     render();
+  }
+  if (message.type === 'GUIDE_REFRESH' || message.type === 'RELOAD_GUIDE' || message.type === 'SHOT_SAVED') {
+    reloadSavedShot().catch(() => {
+      /* 忽略失败 */
+    });
   }
   if (message.type === 'LIMIT') {
     document.getElementById('status').textContent = '已到 ' + message.max + ' 步上限。先删除不需要的步骤再继续。';

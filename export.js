@@ -21,7 +21,7 @@ function safeFileName(name) {
 function stepImageName(guide, step, index, used) {
   const title = fileStem(guide.title, '未命名流程');
   const stepTitle = fileStem(step.text, '步骤' + (index + 1));
-  let stem = title + '+' + stepTitle;
+  const stem = title + '+' + stepTitle;
   let name = stem + '.jpg';
   if (used[name]) name = stem + '+' + (index + 1) + '.jpg';
   used[name] = true;

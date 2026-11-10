@@ -116,6 +116,12 @@ function broadcast(message) {
 }
 
 async function persist() {
+  try {
+    const saved = await loadGuide();
+    if ((saved.shotRev || 0) > (guide.shotRev || 0)) guide = saved;
+  } catch {
+    /* 忽略失败 */
+  }
   await saveGuide(guide);
   syncBadge();
   broadcast({ type: 'GUIDE', guide });
@@ -169,12 +175,13 @@ function dataUrlToBlob(dataUrl) {
 async function shrink(dataUrl, xPct, yPct) {
   const blob = dataUrlToBlob(dataUrl);
   const bitmap = await createImageBitmap(blob);
-  const scale = Math.min(1, 2560 / bitmap.width);
+  const longest = Math.max(bitmap.width, bitmap.height);
+  const scale = Math.min(1, 4096 / longest);
   const width = Math.max(1, Math.round(bitmap.width * scale));
   const height = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = new OffscreenCanvas(width, height);
   const ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingEnabled = scale < 1;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(bitmap, 0, 0, width, height);
   drawClick(ctx, width, height, xPct, yPct);
@@ -205,6 +212,10 @@ function mosaicRegion(width, height, box, xPct, yPct) {
   };
 }
 
+function mixChannel(value, target, amount) {
+  return Math.max(0, Math.min(255, Math.round(value * (1 - amount) + target * amount)));
+}
+
 function drawMosaic(ctx, region) {
   if (!region) return;
   const canvas = ctx.canvas;
@@ -214,16 +225,33 @@ function drawMosaic(ctx, region) {
   const h = Math.min(canvas.height - y, Math.ceil(region.h));
   if (w < 2 || h < 2) return;
   const block = Math.max(18, Math.round(Math.min(w, h) / 3));
-  const image = ctx.getImageData(x, y, w, h);
+  let image = null;
+  try {
+    image = ctx.getImageData(x, y, w, h);
+  } catch {
+    image = null;
+  }
+  if (!image) {
+    for (let by = 0; by < h; by += block) {
+      for (let bx = 0; bx < w; bx += block) {
+        const lighten = ((Math.floor(bx / block) + Math.floor(by / block)) % 2) === 0;
+        ctx.fillStyle = lighten ? '#a79cf5' : '#3d3478';
+        ctx.fillRect(x + bx, y + by, Math.min(block, w - bx), Math.min(block, h - by));
+      }
+    }
+    return;
+  }
   const data = image.data;
   for (let by = 0; by < h; by += block) {
     for (let bx = 0; bx < w; bx += block) {
       const sx = Math.min(bx + Math.floor(block / 2), w - 1);
       const sy = Math.min(by + Math.floor(block / 2), h - 1);
       const index = (sy * w + sx) * 4;
-      const red = data[index];
-      const green = data[index + 1];
-      const blue = data[index + 2];
+      const lighten = ((Math.floor(bx / block) + Math.floor(by / block)) % 2) === 0;
+      const amount = lighten ? 0.62 : 0.45;
+      const red = mixChannel(data[index], lighten ? 167 : 61, amount);
+      const green = mixChannel(data[index + 1], lighten ? 156 : 52, amount);
+      const blue = mixChannel(data[index + 2], lighten ? 245 : 120, amount);
       const alpha = data[index + 3];
       const blockWidth = Math.min(block, w - bx);
       const blockHeight = Math.min(block, h - by);
@@ -242,14 +270,42 @@ function drawMosaic(ctx, region) {
   ctx.putImageData(image, x, y);
 }
 
-async function mosaicImage(dataUrl, box, xPct, yPct) {
+function privacyRegion(step) {
+  if (!step || step.kind !== 'type') return null;
+  if (step.box && step.box.w > 0 && step.box.h > 0) {
+    return { box: step.box, xPct: step.xPct, yPct: step.yPct };
+  }
+  if (step.xPct == null || step.yPct == null) return null;
+  return { box: null, xPct: step.xPct, yPct: step.yPct };
+}
+
+function samePage(left, right) {
+  if (!left || !right) return left === right;
+  try {
+    const a = new URL(left);
+    const b = new URL(right);
+    return a.origin === b.origin && a.pathname === b.pathname;
+  } catch {
+    return left === right;
+  }
+}
+
+function hideTypedText(text) {
+  return String(text || '').replace(/输入「[^」]*」/, '输入「已隐藏」');
+}
+
+async function mosaicImage(dataUrl, regions) {
+  const list = (regions || []).filter(Boolean);
+  if (!dataUrl || !list.length) return dataUrl;
   const blob = dataUrlToBlob(dataUrl);
   const bitmap = await createImageBitmap(blob);
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
   const ctx = canvas.getContext('2d');
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
-  drawMosaic(ctx, mosaicRegion(canvas.width, canvas.height, box, xPct, yPct));
+  list.forEach((region) => {
+    drawMosaic(ctx, mosaicRegion(canvas.width, canvas.height, region.box, region.xPct, region.yPct));
+  },);
   const png = await canvas.convertToBlob({ type: 'image/png' });
   return blobToDataUrl(png);
 }
@@ -320,6 +376,7 @@ async function addStep(partial, tabId) {
     yPct: partial.yPct == null ? null : partial.yPct,
     box: partial.box || null,
     sensitive: Boolean(partial.sensitive),
+    actedAt: typeof partial.actedAt === 'number' ? partial.actedAt : 0,
   };
   placeStep(step);
   syncDescriptionUrls();
@@ -330,12 +387,17 @@ function placeStep(step) {
   const afterIndex = guide.steps.findIndex((item) => {
     return item.id === guide.insertAfterId;
   },);
-  if (afterIndex >= 0) {
-    guide.steps.splice(afterIndex + 1, 0, step);
-    guide.insertAfterId = step.id;
-    return;
+  const at = afterIndex >= 0 ? afterIndex + 1 : guide.steps.length;
+  guide.steps.splice(at, 0, step);
+  let index = at;
+  while (index > 0 && step.actedAt && guide.steps[index - 1].actedAt > step.actedAt) {
+    if (afterIndex >= 0 && index - 1 <= afterIndex) break;
+    const prev = guide.steps[index - 1];
+    guide.steps[index] = prev;
+    guide.steps[index - 1] = step;
+    index -= 1;
   }
-  guide.steps.push(step);
+  if (afterIndex >= 0) guide.insertAfterId = guide.steps[guide.steps.length - 1].id;
 }
 
 function enqueueCapture(partial, tabId) {
@@ -520,6 +582,30 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   if (refreshPageTitle(tab, info.title)) await persist();
 },);
 
+function adoptSavedGuide(saved) {
+  guide = saved;
+  normalizeTitle();
+  syncBadge();
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.shotEditSaved) return;
+  loadGuide().then(adoptSavedGuide).catch(() => {
+    /* 忽略失败 */
+  });
+},);
+
+const shotChannel = new BroadcastChannel('sop-guide');
+shotChannel.onmessage = (event) => {
+  if (!event.data || event.data.type !== 'shot-saved') return;
+  loadGuide().then((saved) => {
+    adoptSavedGuide(saved);
+    broadcast({ type: 'GUIDE_REFRESH' });
+  },).catch(() => {
+    /* 忽略失败 */
+  });
+};
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handle(message, sender).then(sendResponse).catch((error) => {
     sendResponse({ ok: false, error: String(error) });
@@ -547,6 +633,11 @@ async function activeWebTab() {
 
 async function handle(message, sender) {
   await init();
+  if (message.type === 'RELOAD_GUIDE') {
+    adoptSavedGuide(await loadGuide());
+    broadcast({ type: 'GUIDE_REFRESH' });
+    return { ok: true };
+  }
   if (message.type === 'GET_STATE') {
     const tab = await activeWebTab();
     const pageChanged = await applyPageDefaults(tab);
@@ -575,6 +666,12 @@ async function handle(message, sender) {
   if (message.type === 'EVENT') {
     if (!guide.recording) return { ok: true, guide };
     const tabId = sender.tab && sender.tab.id;
+    if (message.event && message.event.kind === 'click') {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 160);
+      },);
+      if (!guide.recording) return { ok: true, guide };
+    }
     await enqueueCapture(message.event, tabId);
     return { ok: true };
   }
@@ -615,6 +712,9 @@ async function handle(message, sender) {
     },);
     if (step && typeof message.text === 'string') step.text = message.text.slice(0, 200);
     if (step && typeof message.note === 'string') step.note = message.note.slice(0, 1000);
+    if (step && typeof message.image === 'string' && message.image.indexOf('data:image/') === 0) {
+      step.image = message.image;
+    }
     await persist();
     return { ok: true, guide };
   }
@@ -663,16 +763,42 @@ async function handle(message, sender) {
     },);
     if (step) {
       step.sensitive = true;
-      step.text = step.text.replace(/输入「[^」]*」/, '输入密码');
-      if (step.image) {
+      step.text = hideTypedText(step.text);
+      const region = privacyRegion(step);
+      if (step.image && region) {
         try {
-          step.image = await mosaicImage(step.image, step.box, step.xPct, step.yPct);
+          step.image = await mosaicImage(step.image, [region]);
         } catch {
           /* 忽略失败 */
         }
       }
       await persist();
     }
+    return { ok: true, guide };
+  }
+  if (message.type === 'REDACT_ALL') {
+    const regions = guide.steps.map((item) => privacyRegion(item));
+    for (let index = 0; index < guide.steps.length; index += 1) {
+      const step = guide.steps[index];
+      if (step.kind === 'type') {
+        step.sensitive = true;
+        step.text = hideTypedText(step.text);
+      }
+      if (!step.image) continue;
+      const hits = [];
+      regions.forEach((region, regionIndex) => {
+        if (!region) return;
+        if (!samePage(guide.steps[regionIndex].url, step.url)) return;
+        hits.push(region);
+      },);
+      if (!hits.length) continue;
+      try {
+        step.image = await mosaicImage(step.image, hits);
+      } catch {
+        /* 忽略失败 */
+      }
+    }
+    await persist();
     return { ok: true, guide };
   }
   if (message.type === 'CLEAR') {

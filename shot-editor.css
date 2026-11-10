@@ -1,0 +1,56 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: #241b4a;
+  color: #f3f1fb;
+  font: 15px/1.5 "PingFang SC", "Noto Sans SC", sans-serif;
+}
+
+.bar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.bar span {
+  flex: 1;
+  min-width: 12em;
+}
+
+button {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #241b4a;
+  font: inherit;
+  cursor: pointer;
+}
+
+#done {
+  background: #5b46f5;
+  color: #ffffff;
+}
+
+#stage {
+  flex: 1;
+  min-height: 0;
+  padding: 0 12px 16px;
+  overflow: auto;
+}
+
+canvas {
+  display: block;
+  background: #ffffff;
+  cursor: crosshair;
+  touch-action: none;
+}
