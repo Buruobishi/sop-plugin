@@ -56,11 +56,11 @@ loadGuide().then(async (guide) => {
         + '</article>';
     },)
     .join('');
-  document.title = guide.title || 'SOP 预览';
+  document.title = displayTitle(guide);
   doc.innerHTML =
     logoMarkup(style) +
     '<h1>' +
-    escapeHtml(guide.title || '未命名流程') +
+    escapeHtml(displayTitle(guide)) +
     '</h1>' +
     (guide.description
       ? '<p class="lead">' + escapeHtml(guide.description).replace(/\n/g, '<br>') + '</p>'

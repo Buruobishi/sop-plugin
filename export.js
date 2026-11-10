@@ -19,7 +19,7 @@ function safeFileName(name) {
 }
 
 function stepImageName(guide, step, index, used) {
-  const title = fileStem(guide.title, '未命名流程');
+  const title = fileStem(displayTitle(guide), '未命名流程');
   const stepTitle = fileStem(step.text, '步骤' + (index + 1));
   const stem = title + '+' + stepTitle;
   let name = stem + '.jpg';
@@ -37,8 +37,8 @@ function dataUrlToBytes(dataUrl) {
 }
 
 function markdownPackage(guide) {
-  const base = fileStem(guide.title, '未命名流程');
-  const lines = ['# ' + (guide.title || '未命名流程'), ''];
+  const base = fileStem(displayTitle(guide), '未命名流程');
+  const lines = ['# ' + displayTitle(guide), ''];
   const files = [];
   const usedNames = {};
   if (guide.description) lines.push(guide.description, '');
@@ -158,7 +158,7 @@ function zipStore(entries) {
 }
 
 function toPlainText(guide) {
-  const lines = ['# ' + (guide.title || '未命名流程'), ''];
+  const lines = ['# ' + displayTitle(guide), ''];
   if (guide.description) lines.push(guide.description, '');
   guide.steps.forEach((step, index) => {
     lines.push((index + 1) + '. ' + step.text);
@@ -235,13 +235,13 @@ function toHtml(guide, style) {
   ].join('');
   return (
     "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'><title>" +
-    escapeHtml(guide.title || 'SOP') +
+    escapeHtml(displayTitle(guide)) +
     '</title><style>' +
     css +
     '</style></head><body><main>' +
     logoMarkup(style) +
     '<h1>' +
-    escapeHtml(guide.title || '未命名流程') +
+    escapeHtml(displayTitle(guide)) +
     '</h1>' +
     (guide.description
       ? "<p class='lead'>" + escapeHtml(guide.description).replace(/\n/g, '<br>') + '</p>'

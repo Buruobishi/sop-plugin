@@ -18,6 +18,17 @@ function openSopDb() {
   },);
 }
 
+function displayTitle(source) {
+  const guide = source || {};
+  const custom = String(guide.customTitle || '').trim();
+  if (custom && custom !== '未命名流程') return custom.slice(0, 80);
+  const page = String(guide.pageTitle || '').trim();
+  if (page && page !== '未命名流程') return page.slice(0, 80);
+  const stored = String(guide.title || '').trim();
+  if (stored && stored !== '未命名流程') return stored.slice(0, 80);
+  return '未命名流程';
+}
+
 function emptyGuide() {
   return {
     title: '未命名流程',

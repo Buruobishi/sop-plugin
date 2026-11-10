@@ -155,6 +155,19 @@ document.getElementById('title').addEventListener('change', (event) => {
   ask({ type: 'UPDATE_TITLE', title: event.target.value });
 },);
 
+async function rememberVisibleTitle() {
+  if (!guide) return;
+  const input = document.getElementById('title');
+  const typed = input ? input.value.trim().slice(0, 80) : '';
+  if (typed && typed !== '未命名流程') {
+    const response = await ask({ type: 'UPDATE_TITLE', title: typed });
+    if (response && response.guide) guide = response.guide;
+  }
+  const visible = displayTitle(guide);
+  if (visible !== '未命名流程') guide.title = visible;
+  else if (typed && typed !== '未命名流程') guide.title = typed;
+}
+
 document.getElementById('description').addEventListener('change', (event) => {
   ask({ type: 'UPDATE_DESCRIPTION', description: event.target.value });
 },);
@@ -202,6 +215,7 @@ document.getElementById('clear').addEventListener('click', async () => {
 
 document.getElementById('copy').addEventListener('click', async () => {
   if (!guide) return;
+  await rememberVisibleTitle();
   await navigator.clipboard.writeText(toPlainText(guide));
   const button = document.getElementById('copy');
   button.textContent = '已复制';
@@ -210,8 +224,9 @@ document.getElementById('copy').addEventListener('click', async () => {
   }, 1200,);
 },);
 
-document.getElementById('markdown').addEventListener('click', () => {
+document.getElementById('markdown').addEventListener('click', async () => {
   if (!guide) return;
+  await rememberVisibleTitle();
   downloadMarkdown(guide);
 },);
 
@@ -1065,7 +1080,7 @@ async function renderPdfPages(guide, style) {
     : [{ text: '没有步骤', url: '', image: null }];
   const measure = document.createElement('canvas').getContext('2d');
   measure.font = titleWeight + docSize + 'px ' + font;
-  const titleLines = wrapPdfText(measure, guide.title || '未命名流程', contentWidth);
+  const titleLines = wrapPdfText(measure, displayTitle(guide), contentWidth);
   measure.font = urlSize + 'px ' + font;
   const timeSource = style.showRecordedAt ? recordedAtText(guide.startedAt) : '';
   const timeLines = timeSource ? wrapPdfText(measure, timeSource, contentWidth) : [];
@@ -1564,6 +1579,7 @@ async function renderPdfPages(guide, style) {
 
 document.getElementById('pdf').addEventListener('click', async () => {
   if (!guide) return;
+  await rememberVisibleTitle();
   const button = document.getElementById('pdf');
   button.disabled = true;
   button.textContent = '正在生成';
@@ -1579,8 +1595,9 @@ document.getElementById('pdf').addEventListener('click', async () => {
   }
 },);
 
-document.getElementById('html').addEventListener('click', () => {
+document.getElementById('html').addEventListener('click', async () => {
   if (!guide) return;
+  await rememberVisibleTitle();
   const name = (guide.title || 'sop').replace(/[\\/:*?"<>|]/g, '-') + '.html';
   downloadText(name, toHtml(guide, readPdfStyle()), 'text/html');
 },);
@@ -1681,7 +1698,7 @@ function paintVideoSlide(ctx, slide) {
 
 async function buildStepVideo(guide, onProgress) {
   const steps = guide.steps || [];
-  const rawTitle = String(guide.title || '').trim();
+  const rawTitle = displayTitle(guide);
   const headline = rawTitle && rawTitle !== '未命名流程' ? rawTitle : '';
   const slides = [{
     headline,
@@ -1754,6 +1771,7 @@ document.getElementById('video').addEventListener('click', async () => {
     document.getElementById('status').textContent = '还没有步骤。先把操作录成步骤，再生成视频。';
     return;
   }
+  await rememberVisibleTitle();
   const button = document.getElementById('video');
   button.disabled = true;
   button.textContent = '正在生成';
@@ -1771,7 +1789,8 @@ document.getElementById('video').addEventListener('click', async () => {
   }
 },);
 
-document.getElementById('preview').addEventListener('click', () => {
+document.getElementById('preview').addEventListener('click', async () => {
+  await rememberVisibleTitle();
   chrome.tabs.create({ url: chrome.runtime.getURL('guide.html') });
 },);
 
@@ -1804,6 +1823,7 @@ function closePdfPreview() {
 
 async function openPdfPreview() {
   if (!guide) return;
+  await rememberVisibleTitle();
   const button = document.getElementById('pdf-preview-open');
   button.disabled = true;
   button.textContent = '正在生成';
