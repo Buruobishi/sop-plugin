@@ -1,148 +1,168 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <title>SOP 录制</title>
-  <link rel="stylesheet" href="sidepanel.css">
-</head>
-<body>
-  <header>
-    <p class="eyebrow">网页步骤录制</p>
-    <label class="field" for="title">标题</label>
-    <input id="title" maxlength="80" aria-label="标题" placeholder="这段流程叫什么">
-    <label class="field" for="description">说明</label>
-    <textarea id="description" maxlength="1000" rows="3" aria-label="说明" placeholder="适用情况、做完要确认什么"></textarea>
-  </header>
-  <div class="controls">
-    <button id="toggle" type="button">开始录制</button>
-    <p id="status">在网页上照常操作。工具栏出现数字时表示正在记步骤。页面上不放按钮，避免被截进图里。</p>
-  </div>
-  <div class="row">
-    <button id="note" type="button">加一条说明</button>
-    <button id="clear" type="button">清空</button>
-  </div>
-  <ol id="steps"></ol>
-  <section class="styles">
-    <details class="pdf-style" id="panel-style">
-      <summary>侧边栏样式</summary>
-      <div class="pdf-grid">
-        <label class="pdf-span">风格
-          <select id="panel-theme">
-            <option value="paper" selected>纸色</option>
-            <option value="light">浅色</option>
-            <option value="dark">深色</option>
-            <option value="contrast">高对比</option>
-          </select>
-        </label>
-        <label>背景 <input id="panel-paper" type="color" value="#f7f4ee"></label>
-        <label>文字 <input id="panel-ink" type="color" value="#1c1915"></label>
-        <label>强调 <input id="panel-accent" type="color" value="#c2410c"></label>
-        <label class="pdf-span">字号
-          <input id="panel-font" type="range" min="12" max="20" step="1" value="13">
-          <span id="panel-font-label" class="pdf-range-label">13</span>
-        </label>
-        <label class="pdf-span">间距
-          <input id="panel-space" type="range" min="8" max="28" step="1" value="14">
-          <span id="panel-space-label" class="pdf-range-label">14</span>
-        </label>
-        <label class="pdf-span">行距
-          <input id="panel-leading" type="range" min="120" max="200" step="5" value="145">
-          <span id="panel-leading-label" class="pdf-range-label">1.45</span>
-        </label>
-        <label class="pdf-span">圆角
-          <input id="panel-radius" type="range" min="0" max="16" step="1" value="8">
-          <span id="panel-radius-label" class="pdf-range-label">8</span>
-        </label>
-        <button id="panel-reset" class="pdf-span" type="button">恢复侧边栏默认</button>
+  <head>
+    <meta charset="utf-8">
+    <title>SOP 录制</title>
+    <link rel="stylesheet" href="sidepanel.css">
+  </head>
+  <body>
+    <div class="main">
+      <header>
+        <p class="eyebrow">网页步骤录制</p>
+        <label class="field" for="title">标题</label>
+        <input id="title" maxlength="80" aria-label="标题" placeholder="这段流程叫什么">
+        <label class="field note-label" for="description">说明</label>
+        <textarea id="description" maxlength="1000" rows="2" aria-label="说明" placeholder="适用情况、做完要确认什么"></textarea>
+      </header>
+      <ol id="steps"></ol>
+      <section class="styles">
+        <details class="pdf-style" id="panel-style">
+          <summary>侧边栏样式</summary>
+          <div class="pdf-grid">
+            <label class="pdf-span">风格
+              <select id="panel-theme">
+                <option value="paper" selected>纸色</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+                <option value="contrast">高对比</option>
+              </select>
+            </label>
+            <label>背景 <input id="panel-paper" type="color" value="#f7f4ee"></label>
+            <label>文字 <input id="panel-ink" type="color" value="#1c1915"></label>
+            <label>强调 <input id="panel-accent" type="color" value="#c2410c"></label>
+            <label class="pdf-span">字号
+              <input id="panel-font" type="range" min="12" max="20" step="1" value="13">
+              <span id="panel-font-label" class="pdf-range-label">13</span>
+            </label>
+            <label class="pdf-span">间距
+              <input id="panel-space" type="range" min="8" max="28" step="1" value="14">
+              <span id="panel-space-label" class="pdf-range-label">14</span>
+            </label>
+            <label class="pdf-span">行距
+              <input id="panel-leading" type="range" min="120" max="200" step="5" value="145">
+              <span id="panel-leading-label" class="pdf-range-label">1.45</span>
+            </label>
+            <label class="pdf-span">圆角
+              <input id="panel-radius" type="range" min="0" max="16" step="1" value="8">
+              <span id="panel-radius-label" class="pdf-range-label">8</span>
+            </label>
+            <p class="pdf-group">标题</p>
+            <div class="pdf-span pdf-inline">
+              <label>颜色 <input id="panel-title-color" type="color" value="#1c1915"></label>
+              <label><input id="panel-title-bold" type="checkbox" checked> 加粗</label>
+            </div>
+            <label class="pdf-span">字号
+              <input id="panel-title-size" type="range" min="14" max="36" step="1" value="18">
+              <span id="panel-title-size-label" class="pdf-range-label">18</span>
+            </label>
+            <p class="pdf-group">说明</p>
+            <div class="pdf-span pdf-inline">
+              <label>颜色 <input id="panel-note-color" type="color" value="#1c1915"></label>
+              <label><input id="panel-note-bold" type="checkbox"> 加粗</label>
+            </div>
+            <label class="pdf-span">字号
+              <input id="panel-note-size" type="range" min="12" max="28" step="1" value="13">
+              <span id="panel-note-size-label" class="pdf-range-label">13</span>
+            </label>
+            <button id="panel-reset" class="pdf-span" type="button">恢复侧边栏默认</button>
+          </div>
+        </details>
+        <details class="pdf-style" id="pdf-style">
+          <summary>PDF 样式</summary>
+          <div class="pdf-grid">
+            <label>纸色 <input id="pdf-paper" type="color" value="#f7f4ee"></label>
+            <label>文字 <input id="pdf-ink" type="color" value="#1c1915"></label>
+            <label>辅助色 <input id="pdf-muted" type="color" value="#6d655b"></label>
+            <label>强调色 <input id="pdf-accent" type="color" value="#c2410c"></label>
+            <label>纸张
+              <select id="pdf-page">
+                <option value="a3">A3</option>
+                <option value="a4" selected>A4</option>
+                <option value="a5">A5</option>
+                <option value="b5">B5</option>
+                <option value="letter">Letter</option>
+                <option value="legal">Legal</option>
+              </select>
+            </label>
+            <label>方向
+              <select id="pdf-orientation">
+                <option value="portrait" selected>纵向</option>
+                <option value="landscape">横向</option>
+              </select>
+            </label>
+            <label>字号
+              <select id="pdf-size">
+                <option value="s">小</option>
+                <option value="m" selected>标准</option>
+                <option value="l">大</option>
+              </select>
+            </label>
+            <label>页边距
+              <select id="pdf-margin">
+                <option value="s">窄</option>
+                <option value="m" selected>标准</option>
+                <option value="l">宽</option>
+              </select>
+            </label>
+            <label class="pdf-span">图片
+              <input id="pdf-image" type="range" min="30" max="100" step="5" value="100">
+              <span id="pdf-image-label" class="pdf-range-label">100%</span>
+            </label>
+            <p class="pdf-group">标题</p>
+            <div class="pdf-span pdf-inline">
+              <label>颜色 <input id="pdf-title-color" type="color" value="#1c1915"></label>
+              <label><input id="pdf-title-bold" type="checkbox" checked> 加粗</label>
+            </div>
+            <label class="pdf-span">字号
+              <input id="pdf-title-size" type="range" min="14" max="40" step="1" value="22">
+              <span id="pdf-title-size-label" class="pdf-range-label">22</span>
+            </label>
+            <label class="pdf-span">步骤字号
+              <input id="pdf-step-size" type="range" min="14" max="40" step="1" value="28">
+              <span id="pdf-step-size-label" class="pdf-range-label">28</span>
+            </label>
+            <p class="pdf-group">说明</p>
+            <div class="pdf-span pdf-inline">
+              <label>颜色 <input id="pdf-note-color" type="color" value="#1c1915"></label>
+              <label><input id="pdf-note-bold" type="checkbox"> 加粗</label>
+            </div>
+            <label class="pdf-span">字号
+              <input id="pdf-note-size" type="range" min="12" max="32" step="1" value="18">
+              <span id="pdf-note-size-label" class="pdf-range-label">18</span>
+            </label>
+            <p class="pdf-group">间距</p>
+            <label class="pdf-span">段距
+              <input id="pdf-block-gap" type="range" min="0" max="48" step="2" value="12">
+              <span id="pdf-block-gap-label" class="pdf-range-label">12</span>
+            </label>
+            <label class="pdf-span">行距
+              <input id="pdf-line-gap" type="range" min="0" max="32" step="1" value="8">
+              <span id="pdf-line-gap-label" class="pdf-range-label">8</span>
+            </label>
+            <label class="pdf-span"><input id="pdf-url" type="checkbox" checked> 显示页面地址</label>
+            <label class="pdf-span"><input id="pdf-labels" type="checkbox" checked> 显示「标题」「说明」</label>
+            <button id="pdf-reset" class="pdf-span" type="button">恢复默认样式</button>
+          </div>
+        </details>
+      </section>
+    </div>
+    <footer>
+      <button id="toggle" type="button">开始录制</button>
+      <p id="status">在网页上照常操作。工具栏出现数字时表示正在记步骤。页面上不放按钮，避免被截进图里。</p>
+      <div class="row">
+        <button id="note" type="button">加一条说明</button>
+        <button id="clear" type="button">清空</button>
       </div>
-    </details>
-    <details class="pdf-style" id="pdf-style">
-      <summary>PDF 样式</summary>
-      <div class="pdf-grid">
-        <label>纸色 <input id="pdf-paper" type="color" value="#f7f4ee"></label>
-        <label>文字 <input id="pdf-ink" type="color" value="#1c1915"></label>
-        <label>辅助色 <input id="pdf-muted" type="color" value="#6d655b"></label>
-        <label>强调色 <input id="pdf-accent" type="color" value="#c2410c"></label>
-        <label>纸张
-          <select id="pdf-page">
-            <option value="a3">A3</option>
-            <option value="a4" selected>A4</option>
-            <option value="a5">A5</option>
-            <option value="b5">B5</option>
-            <option value="letter">Letter</option>
-            <option value="legal">Legal</option>
-          </select>
-        </label>
-        <label>方向
-          <select id="pdf-orientation">
-            <option value="portrait" selected>纵向</option>
-            <option value="landscape">横向</option>
-          </select>
-        </label>
-        <label>字号
-          <select id="pdf-size">
-            <option value="s">小</option>
-            <option value="m" selected>标准</option>
-            <option value="l">大</option>
-          </select>
-        </label>
-        <label>页边距
-          <select id="pdf-margin">
-            <option value="s">窄</option>
-            <option value="m" selected>标准</option>
-            <option value="l">宽</option>
-          </select>
-        </label>
-        <label class="pdf-span">图片
-          <input id="pdf-image" type="range" min="30" max="100" step="5" value="100">
-          <span id="pdf-image-label" class="pdf-range-label">100%</span>
-        </label>
-        <p class="pdf-group">标题</p>
-        <div class="pdf-span pdf-inline">
-          <label>颜色 <input id="pdf-title-color" type="color" value="#1c1915"></label>
-          <label><input id="pdf-title-bold" type="checkbox" checked> 加粗</label>
-        </div>
-        <label class="pdf-span">字号
-          <input id="pdf-title-size" type="range" min="14" max="40" step="1" value="22">
-          <span id="pdf-title-size-label" class="pdf-range-label">22</span>
-        </label>
-        <label class="pdf-span">步骤字号
-          <input id="pdf-step-size" type="range" min="14" max="40" step="1" value="28">
-          <span id="pdf-step-size-label" class="pdf-range-label">28</span>
-        </label>
-        <p class="pdf-group">说明</p>
-        <div class="pdf-span pdf-inline">
-          <label>颜色 <input id="pdf-note-color" type="color" value="#1c1915"></label>
-          <label><input id="pdf-note-bold" type="checkbox"> 加粗</label>
-        </div>
-        <label class="pdf-span">字号
-          <input id="pdf-note-size" type="range" min="12" max="32" step="1" value="18">
-          <span id="pdf-note-size-label" class="pdf-range-label">18</span>
-        </label>
-        <p class="pdf-group">间距</p>
-        <label class="pdf-span">段距
-          <input id="pdf-block-gap" type="range" min="0" max="48" step="2" value="12">
-          <span id="pdf-block-gap-label" class="pdf-range-label">12</span>
-        </label>
-        <label class="pdf-span">行距
-          <input id="pdf-line-gap" type="range" min="0" max="32" step="1" value="8">
-          <span id="pdf-line-gap-label" class="pdf-range-label">8</span>
-        </label>
-        <label class="pdf-span"><input id="pdf-url" type="checkbox" checked> 显示页面地址</label>
-        <label class="pdf-span"><input id="pdf-labels" type="checkbox" checked> 显示「标题」「说明」</label>
-        <button id="pdf-reset" class="pdf-span" type="button">恢复默认样式</button>
+      <div class="exports">
+        <button id="copy" type="button">复制文字</button>
+        <button id="markdown" type="button">下载 Markdown</button>
+        <button id="pdf" type="button">下载 PDF</button>
+        <button id="html" type="button">下载 HTML</button>
+        <button id="preview" type="button">预览</button>
       </div>
-    </details>
-  </section>
-  <footer>
-    <button id="copy" type="button">复制文字</button>
-    <button id="markdown" type="button">下载 Markdown</button>
-    <button id="pdf" type="button">下载 PDF</button>
-    <button id="html" type="button">下载 HTML</button>
-    <button id="preview" type="button">预览</button>
-  </footer>
-  <script src="describe.js"></script>
-  <script src="export.js"></script>
-  <script src="sidepanel.js"></script>
-</body>
+    </footer>
+    <script src="describe.js"></script>
+    <script src="export.js"></script>
+    <script src="sidepanel.js"></script>
+  </body>
 </html>

@@ -8,6 +8,11 @@
   --surface: #ffffff;
   --font-size: 13px;
   --title-size: 18px;
+  --title-color: #1c1915;
+  --title-weight: 600;
+  --note-size: 13px;
+  --note-color: #1c1915;
+  --note-weight: 400;
   --line-height: 1.45;
   --pad-x: 14px;
   --pad-y: 12px;
@@ -16,10 +21,20 @@
   --radius: 8px;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
 
 body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   margin: 0;
+  overflow: hidden;
   background: var(--paper);
   color: var(--ink);
   font-family: "Avenir Next", "PingFang SC", "Noto Sans SC", sans-serif;
@@ -27,8 +42,15 @@ body {
   line-height: var(--line-height);
 }
 
-header, .controls, .row, footer {
-  padding: var(--pad-y) var(--pad-x) 0;
+.main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+header {
+  padding: var(--pad-y) var(--pad-x) var(--gap);
+  border-bottom: 1px solid var(--line);
 }
 
 .eyebrow {
@@ -40,10 +62,15 @@ header, .controls, .row, footer {
 
 .field {
   display: block;
-  margin: calc(var(--gap) + 2px) 0 4px;
+  margin: 8px 0 2px;
   color: var(--muted);
   font-size: 0.85em;
   letter-spacing: 0.06em;
+}
+
+.note-label {
+  margin-top: 8px;
+  margin-bottom: 2px;
 }
 
 #title, #description, textarea, button {
@@ -58,21 +85,39 @@ header, .controls, .row, footer {
   background: transparent;
 }
 
-#title {
-  padding: 4px 0 8px;
+#title, textarea.step-title {
+  padding: 2px 0 4px;
+  color: var(--title-color);
   font-size: var(--title-size);
-  font-weight: 600;
+  font-weight: var(--title-weight);
+  line-height: 1.3;
 }
 
-#description {
-  min-height: 64px;
+textarea.step-title {
+  field-sizing: content;
+  min-height: 0;
+  overflow: hidden;
+  resize: none;
+}
+
+#description, textarea.step-note {
+  field-sizing: content;
+  min-height: calc(var(--note-size) * 2.6);
+  max-height: 7.5em;
+  overflow: auto;
   resize: vertical;
-  padding: 4px 0 8px;
-  color: var(--ink);
-  font-weight: 400;
+  margin-top: 0;
+  padding: 2px 0 4px;
+  color: var(--note-color);
+  font-size: var(--note-size);
+  font-weight: var(--note-weight);
+  line-height: 1.45;
 }
 
-#title:focus, #description:focus { outline: none; border-bottom-color: var(--ink); }
+#title:focus, #description:focus {
+  outline: none;
+  border-bottom-color: var(--ink);
+}
 
 #toggle {
   width: 100%;
@@ -80,33 +125,47 @@ header, .controls, .row, footer {
   border-radius: var(--radius);
   background: var(--ink);
   color: var(--paper);
-  padding: 10px 12px;
+  padding: 8px 12px;
   cursor: pointer;
 }
 
-#toggle.live { background: var(--accent); }
-
-#status {
-  margin: 8px 0 0;
-  color: var(--muted);
+#toggle.live {
+  background: var(--accent);
 }
 
-.row, footer {
+#status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85em;
+  line-height: 1.35;
+}
+
+.row, .exports {
   display: flex;
   gap: var(--gap);
 }
 
-.row { padding-top: 10px; }
-
-footer {
-  position: sticky;
-  bottom: 0;
-  flex-wrap: wrap;
-  padding: var(--pad-y) var(--pad-x) var(--pad-x);
-  background: linear-gradient(transparent, var(--paper) 20%);
+.row {
+  padding: 0;
 }
 
-footer button { flex: 1 1 42%; }
+footer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px var(--pad-x) 10px;
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+}
+
+.exports {
+  flex-wrap: wrap;
+}
+
+.exports button {
+  flex: 1 1 42%;
+}
 
 .styles {
   padding: var(--pad-y) var(--pad-x) 0;
@@ -114,11 +173,16 @@ footer button { flex: 1 1 42%; }
 
 .pdf-style {
   margin-bottom: var(--gap);
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .pdf-style summary {
   cursor: pointer;
-  color: var(--muted);
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .pdf-grid {
@@ -180,7 +244,9 @@ footer button { flex: 1 1 42%; }
   gap: 6px;
 }
 
-.pdf-span { grid-column: 1 / -1; }
+.pdf-span {
+  grid-column: 1 / -1;
+}
 
 button {
   border: 1px solid var(--line);
@@ -191,38 +257,49 @@ button {
   cursor: pointer;
 }
 
-button:hover { border-color: var(--accent); }
+button:hover {
+  border-color: var(--accent);
+}
 
 #steps {
   list-style: none;
-  margin: var(--step-gap) 0 0;
-  padding: 0 var(--pad-x) var(--gap);
+  margin: var(--gap) 0 0;
+  padding: var(--gap) var(--pad-x);
 }
 
 .step {
   display: grid;
   grid-template-columns: 22px 1fr;
-  gap: var(--gap);
-  margin: 0 0 var(--step-gap);
-  padding-bottom: var(--step-gap);
-  border-bottom: 1px solid var(--line);
+  gap: 6px var(--gap);
+  align-items: start;
+  margin: 0 0 8px;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .num {
+  padding-top: 1.35em;
   color: var(--accent);
   font-weight: 650;
+  line-height: 1.3;
 }
 
 .shot {
   position: relative;
-  margin-top: 6px;
+  margin-top: 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface);
 }
 
-.shot img { display: block; width: 100%; height: auto; }
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
 
 .missing {
   margin: 0;
@@ -230,12 +307,13 @@ button:hover { border-color: var(--accent); }
   color: var(--accent);
 }
 
-textarea.step-note {
-  min-height: 48px;
-  margin-top: 4px;
+.step .field {
+  margin-top: 0;
 }
 
-.step .field { margin-top: 0; }
+.step .note-label {
+  margin-top: 8px;
+}
 
 textarea {
   width: 100%;
@@ -259,9 +337,16 @@ textarea:focus {
   word-break: break-all;
 }
 
-.actions { display: flex; gap: var(--gap); margin-top: 6px; }
+.actions {
+  display: flex;
+  gap: var(--gap);
+  margin-top: 6px;
+}
 
-.actions button { padding: 3px 6px; font-size: 0.92em; }
+.actions button {
+  padding: 3px 6px;
+  font-size: 0.92em;
+}
 
 .empty {
   color: var(--muted);

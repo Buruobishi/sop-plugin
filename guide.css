@@ -18,18 +18,28 @@ h1 {
   margin: 0 0 8px;
 }
 
-.when, .url { color: #6d655b; }
+.when, .url {
+  color: #6d655b;
+}
 
 .lead, .note {
   margin: 0 0 16px;
   font-family: "PingFang SC", sans-serif;
 }
 
-.lead { font-size: 17px; line-height: 1.6; }
+.lead {
+  font-size: 17px;
+  line-height: 1.6;
+}
 
-.note { margin-bottom: 10px; font-size: 16px; }
+.note {
+  margin-bottom: 10px;
+  font-size: 16px;
+}
 
-.step { margin: 0 0 36px; }
+.step {
+  margin: 0 0 36px;
+}
 
 .step h2 {
   font: 600 20px/1.4 "Songti SC", Palatino, serif;
@@ -54,8 +64,12 @@ h1 {
   border: 1px solid #e4dccf;
   border-radius: 10px;
   overflow: hidden;
-  background: #fff;
+  background: #ffffff;
 }
 
-.shot img { display: block; width: 100%; height: auto; }
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
 
